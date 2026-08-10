@@ -78,7 +78,7 @@ jobs:
       # Flags a pull request that adds a dependency with a known advisory or a
       # licence outside the allow-list, at the point where changing course is
       # still cheap.
-      - uses: actions/dependency-review-action@v4
+      - uses: actions/dependency-review-action@v5
         with:
           fail-on-severity: low
           comment-summary-in-pr: on-failure
