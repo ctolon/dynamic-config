@@ -20,7 +20,7 @@ jobs:
     name: advisories, licences, sources
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           # The full `check` — advisories, licences, sources *and* bans — so a
@@ -32,7 +32,7 @@ jobs:
     name: no unsafe code
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       # Every crate here declares `#![forbid(unsafe_code)]`, which the compiler
@@ -54,7 +54,7 @@ jobs:
     name: secrets stay out of diagnostics
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       # The property is enforced by tests rather than by review, so this job
@@ -74,7 +74,7 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # Flags a pull request that adds a dependency with a known advisory or a
       # licence outside the allow-list, at the point where changing course is
       # still cheap.

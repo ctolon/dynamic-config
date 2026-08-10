@@ -15,7 +15,7 @@ jobs:
     name: verify before publishing
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
@@ -67,7 +67,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: crates-io
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
@@ -116,7 +116,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: notes from the changelog
         run: |
           version="${GITHUB_REF_NAME#v}"
