@@ -42,6 +42,11 @@ pub(super) fn remote_methods(name: &Ident) -> TokenStream {
         /// followed it. Take it **once, where the loop starts** — a sink
         /// taken per delivery reads that moment's generation and fences
         /// nothing.
+        ///
+        /// No source need be installed first: a program that only ever
+        /// watches never calls `set_remote`, and its sink works — the
+        /// "after" above orders the two calls when both exist, it does not
+        /// require the first.
         #[must_use]
         pub fn remote_sink() -> ::dynamic_config::RemoteSink {
             ::dynamic_config::RemoteSink::new(

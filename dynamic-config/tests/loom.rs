@@ -52,12 +52,25 @@ fn a_refresh_racing_a_swap_never_installs_the_old_document() {
         swapper.join().unwrap();
 
         // Every interleaving ends with either nothing (the fetch was
-        // overtaken) or the *new* source's document — never A's.
-        if let Some(document) = remote.document() {
-            assert_eq!(
-                document.text, DOC_B,
-                "the old source's fetch leaked through"
-            );
+        // overtaken, or the swap cleared it) or the new source's document —
+        // never A's. And when nothing survived, the slot must still be
+        // alive: a refresh against the new source has to work, or the
+        // fence would be a brick rather than a filter.
+        match remote.document() {
+            Some(document) => {
+                assert_eq!(
+                    document.text, DOC_B,
+                    "the old source's fetch leaked through"
+                );
+            }
+            None => {
+                remote.refresh().expect("the new source still fetches");
+                assert_eq!(
+                    remote.document().expect("just fetched").text,
+                    DOC_B,
+                    "a refresh after the race must serve the new source"
+                );
+            }
         }
     });
 }

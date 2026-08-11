@@ -303,16 +303,6 @@ impl Remote {
         Ok(())
     }
 
-    /// Puts a document in the slot without fetching one.
-    ///
-    /// What a watch loop calls: the document already arrived, pushed by the
-    /// store, and re-fetching it to learn what it just said would be silly.
-    ///
-    /// No source need be installed for this to work — a program that only ever
-    /// watches never has to configure one. A watch loop serving a source that
-    /// has since been replaced should be stopped with its
-    /// [`RemoteWatch`] — this call cannot tell one store's push from
-    /// another's.
     /// The generation a sink created now would carry; see [`RemoteSink`].
     pub(crate) fn generation(&self) -> u64 {
         self.state().generation
@@ -871,12 +861,37 @@ impl RemoteSink {
     ///
     /// # Errors
     ///
-    /// If the source has been replaced since this sink was created, or if
-    /// the resulting configuration does not load or validate.
+    /// If the source has been replaced since this sink was created —
+    /// checked before the reload *and again after it*, because a
+    /// replacement can land while the reload runs — or if the resulting
+    /// configuration does not load or validate.
     pub fn apply(&self, document: Fetched) -> Result<(), Error> {
         self.remote.install_if(self.generation, document)?;
 
-        match (self.reload)() {
+        let outcome = (self.reload)();
+
+        // The reload read the slot as it stood while it ran. If the source
+        // was replaced mid-flight — after `install_if` said yes — what just
+        // installed may derive from this sink's document even though the
+        // fence now belongs to the replacement. Reload once more against
+        // the slot as it stands, so the replacement's state has the last
+        // word, then refuse like any other stale push.
+        if self.remote.generation() != self.generation {
+            let _ = (self.reload)();
+
+            let error = Error::new(
+                crate::ErrorKind::Backend,
+                "the remote source this sink was created for was replaced \
+                 while its delivery reloaded; the replacement's state was \
+                 restored — stop the old watch loop and take a fresh sink \
+                 from `remote_sink()`",
+            );
+            crate::__log_remote_failure(self.name, &error);
+
+            return Err(error);
+        }
+
+        match outcome {
             Ok(()) => {
                 crate::__log_remote_reload(self.name, None);
 

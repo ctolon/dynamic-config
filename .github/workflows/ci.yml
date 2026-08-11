@@ -383,7 +383,6 @@ jobs:
             --exclude '^https://docs\.rs/dynamic-config'
             --exclude '^https://ctolon\.github\.io/dynamic-config'
             README.md ROADMAP.md CONTRIBUTING.md SECURITY.md RELEASING.md
-            python-bindings-plan.md
             AGENTS.md CHANGELOG.md docs/*.md scripts/README.md
             dynamic-config-*/README.md dynamic-config-*/CHANGELOG.md
             book/src/*.md book/src/remote-stores/*.md

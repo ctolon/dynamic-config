@@ -55,13 +55,17 @@
 //! # use dynamic_config::RemoteWatch;
 //! # use dynamic_config_vault::Vault;
 //! # use std::time::Duration;
+//! # struct Sink;
+//! # impl Sink {
+//! #     fn apply(&self, _: dynamic_config::Fetched) -> Result<(), dynamic_config::Error> { Ok(()) }
+//! # }
 //! # fn example(vault: Vault) {
-//! # let sink = |_: dynamic_config::Fetched| -> Result<(), dynamic_config::Error> { Ok(()) };
+//! # let sink = Sink;
 //! let watch = RemoteWatch::new();
 //! let watching = watch.watching();
 //!
 //! std::thread::spawn(move || {
-//!     vault.watch(&watching, Duration::from_secs(30), move |document| sink(document))
+//!     vault.watch(&watching, Duration::from_secs(30), move |document| sink.apply(document))
 //! });
 //!
 //! // Dropping `watch` — or calling `watch.stop()` — ends the loop.

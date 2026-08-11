@@ -29,15 +29,9 @@ git push -u origin dev
 echo "── ensuring the pull request exists"
 # The title carries the version when this push is a release: "release 0.3.0"
 # scans better in the PR list than a row of "promote dev to main", and the
-# squash-merge reuses it as main's commit subject.
-git fetch -q origin main
-version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
-released=$(git show origin/main:Cargo.toml | sed -n 's/^version = "\(.*\)"/\1/p' | head -1)
-if [ "$version" != "$released" ]; then
-  title="release $version"
-else
-  title="promote dev to main"
-fi
+# squash-merge reuses it as main's commit subject. One rule, one copy:
+. "$(dirname "$0")/promotion-title.sh"
+promotion_title
 
 pr=$(gh pr list --base main --head dev --state open --json number -q '.[0].number')
 if [ -z "$pr" ]; then

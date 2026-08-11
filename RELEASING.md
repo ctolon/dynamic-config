@@ -90,6 +90,7 @@ laptop cannot reach crates.io at all, and nothing reaches it without the
 gates in front of it.
 
 ```sh
+# python3 is also needed: the pre-release hook's changelog rotation uses it.
 cargo install cargo-release just
 
 # On dev (or a branch that lands there):

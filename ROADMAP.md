@@ -53,7 +53,7 @@ becomes a guarantee:
 **0.4 — the instance engine, and the evidence:**
 
 - `Dynamic<T>` + per-instance watch identity + value export — phase one
-  of [python-bindings-plan.md](python-bindings-plan.md), shipped as Rust
+  of [python-bindings-plan.md](docs/python-bindings-plan.md), shipped as Rust
   API on its own merits.
 - Benchmarks that would convince a stranger.
 - A bundle for single-generation groups.
@@ -232,7 +232,7 @@ every Rust user who wanted two configurations of one type) and a watch
 identity beyond `TypeId`. The full design — decorator and class APIs, the
 GIL strategy, secrets derived from `SecretStr` fields rather than
 re-declared, the zero-bug test battery, wheels — is written up in
-[python-bindings-plan.md](python-bindings-plan.md), which is the
+[python-bindings-plan.md](docs/python-bindings-plan.md), which is the
 reference; this entry only tracks that it happens.
 
 ### The road to 1.0 is stabilisation, not features **[own]**

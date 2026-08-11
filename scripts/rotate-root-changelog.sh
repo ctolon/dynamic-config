@@ -16,6 +16,14 @@ cd "$(dirname "$0")/.."
 # should fail loudly, not rotate to nothing.
 version="${NEW_VERSION:?NEW_VERSION is set by the cargo-release hook environment}"
 
+# `cargo release <level>` without `--execute` is a dry run, and it still
+# runs the hooks — with DRY_RUN=true. A look-before-you-leap run must not
+# leave the tree dirty.
+if [ "${DRY_RUN:-false}" = "true" ]; then
+  echo "dry run: would rotate CHANGELOG.md for $version"
+  exit 0
+fi
+
 if grep -q "^## \[$version\]" CHANGELOG.md; then
   exit 0
 fi

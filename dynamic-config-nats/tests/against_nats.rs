@@ -38,6 +38,10 @@ where
         Ok(container) => container,
         Err(first) => {
             eprintln!("container start failed ({first}); retrying once with a fresh container");
+            // Not immediately: the retry that follows a lost scheduling
+            // lottery without pausing is the attempt most likely to lose
+            // the same one.
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
             make().start().await.unwrap_or_else(|second| {
                 panic!(
                     "the container failed to start twice; is Docker available? \
