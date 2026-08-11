@@ -25,6 +25,35 @@ bumps the patch. A change to the minimum supported Rust version is breaking.
 
 ## [Unreleased]
 
+### Breaking
+
+- The remote push path is fenced like the fetch path always was:
+  `apply_remote(document)` is replaced by `remote_sink()` — taken **once,
+  at wiring** — whose `apply` refuses to deliver for a source that has
+  since been replaced. A stale watch loop's push now bounces (and, since a
+  callback error ends a store watch, the stale loop winds itself down)
+  instead of quietly overwriting the store that followed it.
+
+### Added
+
+- The concurrency claims are model-checked: under `--cfg loom` the library
+  swaps its sync primitives for loom's (`src/sync.rs`), and `just loom`
+  runs the remote fence — fetch and push — and the async wake protocol
+  through every interleaving, on the real code. The check-register-check
+  dance now lives in one place, `Notify::poll_with`, which is what the
+  model drives.
+
+### Security
+
+- The dependency lockfile moved to the patched versions behind every open
+  Dependabot alert: `quinn-proto` 0.11.15 (GHSA-4w2j-m93h-cj5j,
+  GHSA-6xvm-j4wr-6v98), `actix-http` 3.12.1 (GHSA-xhj4-vrgc-hr34),
+  `serde_with` 3.21.0 (GHSA-7gcf-g7xr-8hxj) and `aws-sdk-s3` 1.112.0
+  (GHSA-g59m-gf8j-gjf5). Library consumers resolve their own trees and
+  were never pinned to the vulnerable versions by these crates; the
+  lockfile governs this repository's CI and any `--locked` install. The
+  standing triage rule is now written into `SECURITY.md`.
+
 ## [0.2.0] — 2026-08-11
 
 ### Breaking

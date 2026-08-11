@@ -25,6 +25,21 @@ bumps the patch. A change to the minimum supported Rust version is breaking.
 
 ## [Unreleased]
 
+### Breaking
+
+- `apply_remote` → `remote_sink()` + `RemoteSink::apply`: pushes carry the
+  generation of the source their loop was wired against, and a replaced
+  source's sink refuses. `Remote::install` is no longer public.
+
+### Added
+
+- The concurrency claims are model-checked: under `--cfg loom` the library
+  swaps its sync primitives for loom's (`src/sync.rs`), and `just loom`
+  runs the remote fence — fetch and push — and the async wake protocol
+  through every interleaving, on the real code. The check-register-check
+  dance now lives in one place, `Notify::poll_with`, which is what the
+  model drives.
+
 ## [0.2.0] — 2026-08-11
 
 ### Breaking

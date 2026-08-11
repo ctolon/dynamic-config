@@ -25,6 +25,11 @@ bumps the patch. A change to the minimum supported Rust version is breaking.
 
 ## [Unreleased]
 
+### Breaking
+
+- The generated `apply_remote` is replaced by `remote_sink()`; see the
+  core changelog.
+
 ## [0.2.0] — 2026-08-11
 
 ### Breaking
