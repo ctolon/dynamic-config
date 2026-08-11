@@ -276,6 +276,16 @@ degrades to wake-churn (documented). An intrusive list would fix it without
 an allocator; it also drags `unsafe` into a crate that forbids it. That
 trade deserves its own design pass.
 
+### Fuzzing the parsing surfaces **[scorecard]**
+
+proptest already fuzzes the parsing surfaces on stable, but a property test
+is not what the ecosystem's tooling recognises as fuzzing: OSSF Scorecard
+scores the project zero on it. `cargo-fuzz` harnesses over the same
+surfaces — the `.env` parser, units, the redaction walker, the section
+mapper — would be recognised, and coverage-guided input generation does
+find what proptest's random generation does not. Demand-driven: the
+property tests carry the correctness argument today.
+
 ### `WriteDurability` as API **[own]**
 0.1.0 fsyncs every atomic write, unconditionally. If someone measures real
 pain from that, a `Normal`/`Fsync` mode is the escape hatch — not before.

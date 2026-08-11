@@ -12,6 +12,7 @@ around the checks. Each one is safe to re-run and says what it did.
 | `promote.sh` | `dev` → `main`: pushes, opens the pull request if it is not already open (titled "release X.Y.Z" when the push carries a version bump), arms auto-merge, waits for the gates, merges (squash — one commit per promotion, under that title), and re-syncs `dev` onto the new `main`. Picks up wherever `propose.sh` stopped. |
 | `rotate-root-changelog.sh` | Rotates the workspace `CHANGELOG.md` for a release — dated heading, compare link, the version's own reference link. Called by cargo-release's pre-release hook; idempotent, so the per-package hook repetition is harmless. Not run by hand. |
 | `watch-release.sh` | Watches the Release run the latest merge to `main` set off, and says how to recover from a crates.io rate limit. |
+| `security-status.sh` | The whole security surface, read-only: open Dependabot alerts (with who pulls each package), open code-scanning findings, and cargo-deny's local view. Exits with the open-alert count. The triage rules it answers to are in `SECURITY.md`. |
 
 The release itself is a pull request: run `cargo release patch --execute` on
 a branch (it bumps, rewrites changelogs and commits — nothing else), land it
