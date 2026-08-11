@@ -9,7 +9,7 @@ snapshot for the price of an attribute lookup.
 
 This plan reflects an external design review plus this repository's own
 decisions. Where the two differ, the decision and its reason are both
-here. Nothing in it is built yet; the [ROADMAP](ROADMAP.md) tracks when.
+here. Nothing in it is built yet; the [ROADMAP](../ROADMAP.md) tracks when.
 
 ## Goals and non-goals
 
