@@ -27,12 +27,27 @@ echo "── pushing dev"
 git push -u origin dev
 
 echo "── ensuring the pull request exists"
+# The title carries the version when this push is a release: "release 0.3.0"
+# scans better in the PR list than a row of "promote dev to main", and the
+# squash-merge reuses it as main's commit subject.
+git fetch -q origin main
+version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+released=$(git show origin/main:Cargo.toml | sed -n 's/^version = "\(.*\)"/\1/p' | head -1)
+if [ "$version" != "$released" ]; then
+  title="release $version"
+else
+  title="promote dev to main"
+fi
+
 pr=$(gh pr list --base main --head dev --state open --json number -q '.[0].number')
 if [ -z "$pr" ]; then
   gh pr create --base main --head dev \
-    --title "promote dev to main" \
+    --title "$title" \
     --body "Promotes \`dev\` to \`main\`. Gates decide; this description does not."
   pr=$(gh pr list --base main --head dev --state open --json number -q '.[0].number')
+else
+  # A bump can land after the PR opened; keep the title honest either way.
+  gh pr edit "$pr" --title "$title" >/dev/null
 fi
 
 echo "── pull request #$pr is open, nothing armed"
