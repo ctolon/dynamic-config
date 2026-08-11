@@ -41,7 +41,9 @@ if [ -z "$pr" ]; then
   pr=$(gh pr list --base main --head dev --state open --json number -q '.[0].number')
 else
   # A bump can land after the PR opened; keep the title honest either way.
-  gh pr edit "$pr" --title "$title" >/dev/null
+  # REST, not `gh pr edit`: the edit command's GraphQL query still asks for
+  # the deprecated projectCards field and dies on the deprecation notice.
+  gh api -X PATCH "repos/{owner}/{repo}/pulls/$pr" -f title="$title" >/dev/null
 fi
 
 echo "── pull request #$pr is open, nothing armed"
