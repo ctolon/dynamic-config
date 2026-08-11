@@ -26,20 +26,29 @@ needs, and nothing jumps the queue without displacing something.
 **0.3 — stabilisation.** No new surface except where an instruction
 becomes a guarantee:
 
-- Generation-fenced remote pushes — the last unfenced door, and breaking
-  it now is cheaper than ever again.
-- loom/shuttle model checking over `ConfigCell`, `Remote`, `Changes`, the
-  watch registry and group reload — the concurrency claims get proven
-  before the API freezes around them.
-- Tidy the module tree (`builder.rs`, `watch.rs`, `redirects.rs` earn the
-  loader's treatment).
-- The figment abstraction-leak review from the 1.0 doctrine — the review
-  half happens here; whatever it decides lands later.
+- Generation-fenced remote pushes — *shipped*: `remote_sink()` replaces
+  `apply_remote`, and a replaced source's sink refuses by construction.
+- loom model checking — *shipped*: `src/sync.rs` swaps the primitives
+  under `--cfg loom`, and `just loom` proves the remote fence and the wake
+  protocol over every interleaving. `ConfigCell`'s swap stays out — it
+  lives inside `arc-swap`, which loom cannot instrument.
+- Tidy the module tree — *shipped*: `builder/`, `watch/` and `redirects/`
+  got the loader's treatment, one concern per file, and the onboarding
+  tour maps the new layout.
+- The figment abstraction-leak review from the 1.0 doctrine — *done*:
+  [docs/figment-review.md](docs/figment-review.md). Two exposures stay
+  deliberate, two changes land in 0.4 (the reserved-profile fix and
+  derived environment provenance, below).
 - Container suites that fail on behaviour, not scheduling luck.
-- Security-tab triage: the first full pass, and the standing rule.
-- Release and branch mechanics, polished — including the root-changelog
-  rotation that has now been forgotten by hand twice.
-- Writing a store, promoted into the book.
+- Security-tab triage — *done*: six open alerts triaged (four fixed by
+  pinning patched versions, one blocked upstream and dismissed with a
+  written reason, one already fixed), and the standing rule is in
+  `SECURITY.md`.
+- Release and branch mechanics, polished — *shipped*: the root changelog
+  rotates from the pre-release hook, promotions squash-merge under a
+  version-bearing title, and `main` becomes the default branch.
+- Writing a store, promoted into the book — *shipped*:
+  [Writing a Store](book/src/remote-stores/writing-a-store.md).
 
 **0.4 — the instance engine, and the evidence:**
 
@@ -51,6 +60,14 @@ becomes a guarantee:
 - `dynamic-config-cli` graduates to crates.io, redacted-by-default.
 - Encrypting the last-known-good cache.
 - Coverage threshold joins the gates.
+- The figment review's two fixes
+  ([docs/figment-review.md](docs/figment-review.md)): top-level tables
+  named `global` or `default` stop colliding with figment's reserved
+  profiles — today a `global` table silently overrides every section —
+  and environment provenance names the exact variable, derived from
+  prefix + section + separator + path, instead of `APP_*`.
+- The stability-tiers chapter says out loud that the `figment` feature is
+  semver-coupled to figment.
 
 **0.5 and later, pulled by demand:** the Python bindings proper (phases
 two through five of the plan), `proc_macro_crate` rename, key aliases
@@ -113,16 +130,6 @@ and an eighth done casually would be worse than none.
 
 ## After 0.1.0
 
-### Generation-fenced remote pushes **[own]**
-
-`refresh_remote` is fenced: a fetch that started against a source that has
-since been replaced is discarded by its generation token. The *push* path
-is not — `Remote::install(document)` takes no token, and the doc's answer
-is "stop the old watch loop first", which is an instruction where an API
-could be a guarantee. A watch handle that carries the generation it was
-started under (an install sink handed to the loop, say) would make a stale
-watcher's push impossible rather than discouraged. The most valuable
-remaining fence in the remote design.
 
 ### A bundle for single-generation groups **[own]**
 
@@ -150,12 +157,13 @@ The store tests boot real servers, and a shared CI runner sometimes takes
 longer to start one than the wait allows — `WaitContainer(StartupTimeout)`
 from a Vault that was going to be fine in ten more seconds. That is a
 false positive: the code did not change, the daemon was slow, and the fix
-today is "re-run the job". Worth building in instead: one startup retry
-with a fresh container before declaring failure, startup windows measured
-from what CI actually exhibits rather than guessed (Vault already went to
-120 s once), and — since the failure mode is concurrency-driven — keeping
-the `--test-threads=2` cap honest as suites grow. The gate should fail on
-behaviour, not on scheduling luck.
+was "re-run the job". Built in instead, in 0.3: every suite's
+`start_resilient` retries a failed startup once with a fresh container
+before declaring failure, in both runner flavours — a second failure is
+behaviour and reports both errors. Vault keeps its measured 120 s window
+(it crossed 60 s once); the others stay on the default, because the retry
+is what absorbs the tail now. Still standing as suites grow: keep the
+`--test-threads=2` cap honest — the failure mode is concurrency-driven.
 
 ### `dynamic-config-cli` on crates.io **[own]**
 
@@ -175,24 +183,24 @@ sensitive, a published one should not.
 GitHub's security surface (Dependabot alerts, code scanning, the
 dependency-review scorecard warnings) accumulates findings that are each
 either *fixable now*, *waiting on an upstream release*, or *consciously
-accepted*. Right now the distinction lives in nobody's head. One pass over
-everything open, each finding landing in one of those three buckets — the
-accepted ones with the reason written into `deny.toml` or `SECURITY.md`, so
-the next person sees a decision instead of a backlog. Then the standing
-rule: an alert is triaged within a release cycle or it blocks one.
+accepted*. The first full pass happened in 0.3: `serde_with`, `actix-http`,
+`quinn-proto` and `aws-sdk-s3` moved to their patched versions with
+`cargo update --precise` (the MSRV-fallback resolver refuses the jumps on
+its own — the `time` mechanism in `deny.toml`), and the `lru` soundness
+advisory — held at 0.12 by `aws-sdk-s3`'s own requirement — was dismissed
+with the reason on the alert. The standing rule now lives in
+`SECURITY.md`: an alert is triaged within a release cycle or it blocks
+one.
 
 ### Tidy the module tree **[own]**
 
-Folders and files, not crates — the crate split stays refused in
-[Not planned](book/src/limitations.md#not-planned). Within the core, some
-modules earned directories (`loader/`, `expand/`) and others outgrew single
-files without getting one: `builder.rs` now carries the builder, its watch
-plumbing and the `Configured` slot in one file, `watch.rs` mixes the
-debounce machinery with the registry and the `Watched` description, and
-`redirects.rs` holds every remaining facade macro. One pass that gives each
-grown module the same treatment the loader got — a directory, one concern
-per file, the module doc naming what lives where — so the onboarding tour's
-"module by module" chapter keeps mapping one heading to one place.
+Done in 0.3: `builder/` (fluent surface, lifecycle, diagnostics, watching,
+the `Configured` slot), `watch/` (handle and registry, debounce loop,
+relevance), `redirects/` (one macro family per file) — a directory, one
+concern per file, the module doc naming what lives where, and the
+onboarding tour updated to match. The crate split stays refused in
+[Not planned](book/src/limitations.md#not-planned): folders and files, not
+crates.
 
 ### A config server **[own]**
 
@@ -207,12 +215,11 @@ open before building.
 
 ### Writing a store, promoted into the book **[own]**
 
-The book shows `impl RemoteSource` for a toy; the real how-to — the watch
-loop and its `Watching` token, credential refresh with one retry, the
-shared contract table's obligations, what the container tests must pin —
-lives only in an internal contributor skill. Promote it to a chapter, so a
-third-party store crate can be written without reading seven existing ones
-for the pattern.
+Done in 0.3: [Writing a Store](book/src/remote-stores/writing-a-store.md)
+carries the watch loop and its `Watching` token, credential refresh with
+one retry, the contract obligations and what the tests must pin — written
+for a third-party author, with the workspace plumbing deliberately left to
+the contributor guide.
 
 ### Python bindings: Rust resolves, Pydantic validates **[own]**
 
@@ -242,21 +249,25 @@ sophisticated has been beaten up by strangers yet.
 
 ### Release and branch mechanics, polished **[own]**
 
-A collection of paper cuts from cutting two releases:
+A collection of paper cuts from cutting two releases, settled in 0.3:
 
-- **`main` becomes the default branch.** Mention-triggered workflows run
-  from the default branch's workflow file, and "the branch visitors land
-  on" should be the released one. Requires re-pointing the paths-filtered
-  workflows and the branch-protection assumptions ci.yml documents.
-- **Squash merges for `dev` to `main`.** The promotion PR carries dozens of
-  commits whose story the changelog already tells; one commit per release
-  on `main` reads better and makes `git log main` the release history.
-- **The promotion PR titles itself.** `propose.sh`/`promote.sh` should name
-  the version when the push carries a bump — "release 0.2.0", not
-  "promote dev to main" — so the PR list is scannable.
-- **The root changelog rotates itself.** `cargo release` rotates the
-  package changelogs; the workspace one is hand-rotated every release and
-  was forgotten once already. A pre-release hook can do it.
+- **`main` is the default branch** (a repository setting, flipped at the
+  0.3 promotion). `scorecard.yml` moved its push trigger to `main` with it
+  — the scorecard only publishes for the default branch.
+- **Squash merges for `dev` to `main`.** `promote.sh` merges `--squash`;
+  one commit per promotion, titled with the release, so `git log main`
+  *is* the release history. `dev` is re-pointed at `main` afterwards, as
+  before — the granular story is the changelog's to tell.
+- **The promotion PR titles itself.** Both scripts compare the workspace
+  version against `main`'s and title the PR "release X.Y.Z" when the push
+  carries a bump (updating an already-open PR's title too); the squash
+  reuses that title as the commit subject.
+- **The root changelog rotates itself.** `scripts/rotate-root-changelog.sh`
+  runs from the pre-release hook (idempotently — the hook fires once per
+  package) and does the full hand-edit: dated heading, `[Unreleased]`
+  compare link, and the released version's own reference link, which the
+  per-package replacements in `release.toml` now also write for their own
+  files.
 
 
 ### A real no-alloc wait queue for the embedded crate **[own]**
@@ -270,9 +281,12 @@ trade deserves its own design pass.
 pain from that, a `Normal`/`Fsync` mode is the escape hatch — not before.
 
 ### loom / shuttle model checking **[own]**
-The barrier tests pin the known interleavings; loom explores the unknown
-ones. `Remote`'s state machine is the natural first target, but loom wants
-its own sync-type shims — an investment, not an afternoon.
+Landed in 0.3: the shims (`src/sync.rs`), the remote-fence models and the
+wake-protocol model. What remains here is the harder residue — group
+reload and the watch registry lean on process-wide statics, which loom's
+iteration model does not tolerate, and `ConfigCell` sits behind
+`arc-swap`. Shuttle, which runs real code unmodified, is the tool to
+revisit for those.
 
 ### `proc_macro_crate` rename support **[own]**
 `::dynamic_config` is hardcoded in the expansion, so renaming the dependency
