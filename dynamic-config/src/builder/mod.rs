@@ -202,8 +202,16 @@ impl<T: DeserializeOwned> Builder<T> {
 
     /// The instance path: this builder installs into `cell`. What
     /// [`Dynamic::new`](crate::Dynamic::new) wires; not public API.
+    ///
+    /// The registration callback is severed along with the installer: a
+    /// generated builder's `register` points at the *type's* `Configured`
+    /// slot, and an instance-owned builder landing there would cross-wire
+    /// the type surface — `Config::reload()` installing into the
+    /// `Dynamic`'s cell while `Config::current()` reads a static nothing
+    /// writes.
     pub(crate) fn with_cell(mut self, cell: std::sync::Arc<crate::cell::ConfigCell<T>>) -> Self {
         self.install = Some(Installer::Cell(cell));
+        self.register = None;
         self
     }
 
@@ -345,6 +353,13 @@ impl<T: DeserializeOwned> Builder<T> {
     #[must_use]
     pub fn cache(mut self, path: impl Into<String>, mode: CacheMode) -> Self {
         self.cache = Some((path.into(), mode));
+        // Last writer wins outright: a plaintext cache asked for after an
+        // encrypted one must not keep the encryptor and silently write a
+        // full encrypted document where redaction was requested.
+        #[cfg(feature = "decrypt")]
+        {
+            self.cache_encryptor = None;
+        }
         self
     }
 

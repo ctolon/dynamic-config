@@ -304,3 +304,40 @@ mod changes {
         }
     }
 }
+
+/// A `Dynamic` may adopt a *generated* builder — and doing so must leave
+/// the type-level surface untouched: the adopted builder installs into the
+/// instance's cell, so registering it in the type's `Configured` slot
+/// would cross-wire `TypeSide::reload()` into the instance while
+/// `TypeSide::current()` reads a static nothing writes.
+#[test]
+fn adopting_a_generated_builder_does_not_capture_the_type_surface() {
+    use dynamic_config::dynamic_config;
+
+    #[dynamic_config]
+    #[derive(Debug, serde::Deserialize)]
+    struct TypeSide {
+        port: u16,
+    }
+
+    write_tenant("tests/scratch/dyn-adopted.json", "adopted", 4100);
+
+    let instance = Dynamic::new(TypeSide::builder("tenant").file("tests/scratch/dyn-adopted.json"));
+    instance.init().expect("the instance initialises");
+    assert_eq!(instance.current().expect("installed").port, 4100);
+
+    // The type surface never saw an install…
+    assert!(
+        TypeSide::try_current().is_none(),
+        "the instance's init must not write the type's static"
+    );
+
+    // …and it never learned a configuration either: the type-level
+    // diagnostics answer through the remembered builder, and there must
+    // be none to remember — not the instance's.
+    assert!(
+        TypeSide::source_of("port").is_err(),
+        "the type's Configured slot must stay empty"
+    );
+    assert_eq!(instance.current().expect("still the instance's").port, 4100);
+}

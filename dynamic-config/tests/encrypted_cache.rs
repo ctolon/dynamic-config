@@ -131,3 +131,49 @@ fn an_encrypted_cache_path_must_carry_the_format_under_the_suffix() {
         .expect("a cache that cannot write is a warning");
     assert!(!std::path::Path::new("tests/scratch/enc-cache-bad").exists());
 }
+
+/// The last cache call wins, in both directions — an encryptor left armed
+/// after a plaintext `.cache(..)` would write a full encrypted document
+/// where redaction was asked for.
+#[test]
+fn the_last_cache_call_wins_in_both_directions() {
+    let _ = dynamic_config::set_decryptor(ToyDecryptor);
+
+    fs::create_dir_all("tests/scratch").unwrap();
+    let source = "tests/scratch/enc-cache-order.json";
+    fs::write(
+        source,
+        r#"{"db": {"host": "h", "password": "order-s3cret"}}"#,
+    )
+    .unwrap();
+
+    // Encrypted, then plaintext-full: the plaintext file is what exists.
+    let plain = "tests/scratch/enc-cache-order-plain.json";
+    let _ = fs::remove_file(plain);
+    let dynamic = dynamic_config::Dynamic::new(
+        Builder::<Db>::new("db")
+            .file(source)
+            .cache_encrypted("tests/scratch/enc-cache-order.json.age", Toy)
+            .cache(plain, dynamic_config::CacheMode::Full),
+    );
+    dynamic.init().expect("init succeeds");
+    let bytes = fs::read(plain).expect("the plaintext cache was written");
+    assert!(
+        !bytes.starts_with(MARKER),
+        "the later `.cache(..)` must not write through the earlier encryptor"
+    );
+
+    // Plaintext, then encrypted: the encrypted file is what exists.
+    let encrypted = "tests/scratch/enc-cache-order-enc.json.age";
+    let _ = fs::remove_file(encrypted);
+    let dynamic = dynamic_config::Dynamic::new(
+        Builder::<Db>::new("db")
+            .file(source)
+            .cache(plain, dynamic_config::CacheMode::Full)
+            .cache_encrypted(encrypted, Toy),
+    );
+    dynamic.init().expect("init succeeds");
+    assert!(fs::read(encrypted)
+        .expect("the encrypted cache was written")
+        .starts_with(MARKER));
+}

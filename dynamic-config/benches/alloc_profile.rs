@@ -20,6 +20,13 @@ use dynamic_config::{dynamic_config, Builder, Dynamic};
 use serde::Deserialize;
 
 /// The system allocator, with a tally.
+///
+/// This impl is the workspace's one audited `unsafe`: `GlobalAlloc` is an
+/// unsafe trait and there is no safe way to hook the allocator. It never
+/// ships — benches are their own crates, outside every published package —
+/// and `security.yml`'s sweep names this file as the single exemption, so
+/// a second `unsafe` anywhere in the test/bench/example tree is a red
+/// gate, not a precedent.
 struct Counting;
 
 static ALLOCATIONS: AtomicU64 = AtomicU64::new(0);

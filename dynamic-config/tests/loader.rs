@@ -156,6 +156,47 @@ fn an_environment_value_names_its_exact_variable() {
         "a key the environment does not set still points at the file"
     );
 
+    // The error path names the same variable: a type failure inside the
+    // env layer points at what supplied the bad value. Same test, because
+    // this file allows itself exactly one env-touching test — `set_var`
+    // while another thread enumerates the environment is the race the
+    // header describes, whatever the prefixes are.
+    #[derive(Debug, Deserialize)]
+    struct Nested {
+        #[allow(dead_code)]
+        pool: Pool,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct Pool {
+        #[allow(dead_code)]
+        max_size: u32,
+    }
+
+    std::env::set_var("DCORIGIN_DB_POOL__MAX_SIZE", "not-a-number");
+
+    let empty: [Source<'static>; 0] = [];
+    let nested_spec = LoadSpec::new("db", &empty).with_env("DCORIGIN_");
+
+    let error = load::<Nested>(&nested_spec).expect_err("a string is not a u32");
+    assert!(
+        error.to_string().contains("DCORIGIN_DB_POOL__MAX_SIZE"),
+        "the error should name the exact variable: {error}"
+    );
+
+    // The question path agrees, through the builder surface.
+    let origin = dynamic_config::Builder::<Nested>::new("db")
+        .env("DCORIGIN_")
+        .source_of("pool.max_size");
+    assert_eq!(
+        format!(
+            "{}",
+            origin.expect("resolvable").expect("the env supplies it")
+        ),
+        "from DCORIGIN_DB_POOL__MAX_SIZE"
+    );
+
+    std::env::remove_var("DCORIGIN_DB_POOL__MAX_SIZE");
     std::env::remove_var("DCORIGIN_DB_PORT");
 }
 
@@ -312,53 +353,4 @@ fn a_default_table_fills_no_gaps_and_is_an_ordinary_section() {
     // …and `default` is reachable as a plain section of its own.
     let named: Db = load(&LoadSpec::new("default", &sources)).expect("`default` is a section name");
     assert_eq!(named.host, "filler");
-}
-
-/// Environment provenance names the exact variable, derived from prefix +
-/// path + nesting separator — not the `APP_*` wildcard figment's
-/// per-provider metadata dead-ends at. A naming convention rather than a
-/// measurement, so it is pinned here: if figment changes how `split`
-/// composes names, this is where the drift shows.
-#[test]
-fn an_environment_origin_names_the_exact_variable() {
-    #[derive(Debug, Deserialize)]
-    struct Db {
-        #[allow(dead_code)]
-        pool: Pool,
-    }
-
-    #[derive(Debug, Deserialize)]
-    struct Pool {
-        #[allow(dead_code)]
-        max_size: u32,
-    }
-
-    // A guaranteed-unique variable, so parallel tests cannot collide.
-    std::env::set_var("LOADERPROV_DB_POOL__MAX_SIZE", "not-a-number");
-
-    let sources: [Source<'static>; 0] = [];
-    let spec = LoadSpec::new("db", &sources).with_env("LOADERPROV_");
-
-    // The error path: a type failure inside the env layer names the
-    // variable that supplied the bad value.
-    let error = load::<Db>(&spec).expect_err("a string is not a u32");
-    assert!(
-        error.to_string().contains("LOADERPROV_DB_POOL__MAX_SIZE"),
-        "the error should name the exact variable: {error}"
-    );
-
-    // The question path: the builder's `source_of` answers with the same
-    // name.
-    let origin = dynamic_config::Builder::<Db>::new("db")
-        .env("LOADERPROV_")
-        .source_of("pool.max_size");
-    assert_eq!(
-        format!(
-            "{}",
-            origin.expect("resolvable").expect("the env supplies it")
-        ),
-        "from LOADERPROV_DB_POOL__MAX_SIZE"
-    );
-
-    std::env::remove_var("LOADERPROV_DB_POOL__MAX_SIZE");
 }

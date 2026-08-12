@@ -232,9 +232,16 @@ fn the_readmes_agree_on_one_version() {
     readmes.push(repo.join("README.md"));
 
     let mut versions: std::collections::BTreeMap<String, Vec<String>> = Default::default();
+    // A README that contributes *nothing* is the exact regression this gate
+    // exists for — a snippet deleted, or rewritten into a shape the parser
+    // no longer sees — so per-file accounting is part of the assertion. The
+    // CLI is the one legitimate exemption: a binary is installed, not
+    // depended on, and its README carries no version by design.
+    let mut empty: Vec<String> = Vec::new();
 
     for readme in &readmes {
         let text = fs::read_to_string(readme).expect("a README is readable");
+        let before: usize = versions.values().map(Vec::len).sum();
 
         // `dynamic-config… = "X.Y.Z"` and `version = "X.Y.Z"`, inside toml
         // fences; `<version>` placeholders (the book's convention) and the
@@ -260,8 +267,20 @@ fn the_readmes_agree_on_one_version() {
                 }
             }
         }
+
+        let contributed = versions.values().map(Vec::len).sum::<usize>() > before;
+        let exempt = readme.display().to_string().contains("dynamic-config-cli");
+
+        if !contributed && !exempt {
+            empty.push(readme.display().to_string());
+        }
     }
 
+    assert!(
+        empty.is_empty(),
+        "these READMEs contribute no install-snippet version — deleted \
+         snippet, or a shape the parser no longer sees: {empty:?}"
+    );
     assert!(
         !versions.is_empty(),
         "found no install-snippet versions — the extraction broke"

@@ -130,6 +130,13 @@ pub(super) fn convert(error: figment::Error, spec: &crate::source::LoadSpec<'_>)
 /// a measurement, which is why `tests/loader.rs` pins it: if figment ever
 /// changes the convention, the drift shows up there and not in a bug
 /// report.
+///
+/// Derived, then *checked*: the composed name is only claimed when that
+/// variable actually exists in the environment. An aliased value carries
+/// the destination path while the variable that supplied it spells the
+/// old one — deriving from the path would name a variable nobody set —
+/// and the honest fallback for any composition the environment does not
+/// confirm is the prefix wildcard the trail already ended at.
 pub(super) fn refine_env<'a>(
     origin: Origin,
     path: impl Iterator<Item = &'a str>,
@@ -142,16 +149,19 @@ pub(super) fn refine_env<'a>(
         return origin;
     };
 
-    let variable: Vec<String> = path.map(str::to_ascii_uppercase).collect();
+    let segments: Vec<String> = path.map(str::to_ascii_uppercase).collect();
 
-    if variable.is_empty() {
+    if segments.is_empty() {
         return origin;
     }
 
-    Origin::Env(format!(
-        "{stem}{}",
-        variable.join(&nest.to_ascii_uppercase())
-    ))
+    let variable = format!("{stem}{}", segments.join(&nest.to_ascii_uppercase()));
+
+    if std::env::var_os(&variable).is_none() {
+        return origin;
+    }
+
+    Origin::Env(variable)
 }
 
 /// Pulls the prefix out of ``"`APP_DB_` environment variable(s)"``.

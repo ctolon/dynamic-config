@@ -35,22 +35,35 @@ pattern = re.compile(
     r'^(\s*(?:dynamic-config[a-z0-9-]*\s*=.*?|version\s*=\s*)")(\d+\.\d+\.\d+)(")',
 )
 
-changed = 0
+# Every README that carries a snippet, by name — silent string replacement
+# is the mistake AGENTS.md lists, and a hardcoded roster is what makes a
+# README dropping out of the sync a loud failure instead of a shrug. The
+# CLI's README is exempt by design: a binary is installed, not depended on.
+# A new companion crate joins this list, or the release fails saying so.
+expected = 10
+
+matched = 0
 readmes = [pathlib.Path("README.md"), *pathlib.Path(".").glob("dynamic-config-*/README.md")]
 
 for readme in readmes:
     lines = readme.read_text().splitlines(keepends=True)
     rewritten = []
-    touched = False
+    file_matches = 0
 
     for line in lines:
-        new_line = pattern.sub(lambda m: f"{m.group(1)}{version}{m.group(3)}", line)
-        touched |= new_line != line
+        new_line, hits = pattern.subn(lambda m: f"{m.group(1)}{version}{m.group(3)}", line)
+        file_matches += hits
         rewritten.append(new_line)
 
-    if touched:
+    if file_matches:
         readme.write_text("".join(rewritten))
-        changed += 1
+        matched += 1
 
-print(f"synced {changed} README(s) to {version}")
+if matched != expected:
+    sys.exit(
+        f"synced {matched} README(s), expected {expected} — a snippet was "
+        f"deleted or rewritten into a shape this parser no longer sees"
+    )
+
+print(f"synced {matched} README(s) to {version}")
 PY

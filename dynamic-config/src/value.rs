@@ -17,7 +17,13 @@ use std::collections::BTreeMap;
 /// configuration *handover*, not a diagnostic: real values, secrets
 /// included, exactly like deserializing into a struct — the paths-only
 /// rule governs what this crate prints, not what it hands the program.
-#[derive(Debug, Clone, PartialEq)]
+///
+/// Which is why `Debug` is hand-written and shape-only: the same data
+/// sits inside [`Snapshot`](crate::Snapshot), whose `Debug` prints keys
+/// and never values, and `{:?}` in a log line is exactly how resolved
+/// secrets leak. Read values through the enum; print them on purpose or
+/// not at all.
+#[derive(Clone, PartialEq)]
 pub enum Value {
     /// An explicit null (or unit) in a source.
     Null,
@@ -56,6 +62,23 @@ impl Value {
             Value::Table(table) => table.get(step),
             _ => None,
         })
+    }
+}
+
+impl std::fmt::Debug for Value {
+    /// Shape and keys, never values — the line every diagnostic in this
+    /// crate holds, held here too because `to_value` hands over the same
+    /// secret-bearing data `Snapshot` guards.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Null => f.write_str("Null"),
+            Self::Bool(_) => f.write_str("Bool(***)"),
+            Self::Integer(_) => f.write_str("Integer(***)"),
+            Self::Float(_) => f.write_str("Float(***)"),
+            Self::String(_) => f.write_str("String(***)"),
+            Self::Array(values) => f.debug_list().entries(values.iter()).finish(),
+            Self::Table(table) => f.debug_map().entries(table.iter()).finish(),
+        }
     }
 }
 
