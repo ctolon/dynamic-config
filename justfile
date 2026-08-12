@@ -45,6 +45,13 @@ mocks:
 loom:
     RUSTFLAGS="--cfg loom" cargo test -p dynamic-config --no-default-features --features json,async --test loom --release
 
+# Every benchmark, the way CI runs them: the hand-rolled read path, the
+# criterion suite (reads, readers-during-reload, reload latency, load
+# scaling), and the allocation profile, which asserts the read path
+# allocates nothing.
+bench:
+    cargo bench -p dynamic-config --features json -- --quick
+
 # Documentation, with the badges docs.rs renders. Needs a nightly toolchain
 # (`rustup toolchain install nightly`), the same way docs.rs builds it.
 docs:

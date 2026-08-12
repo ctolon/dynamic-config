@@ -114,6 +114,11 @@ trybuild = "1.0"
 # wiring that a plain flag does not satisfy. The loom job builds only the
 # `loom` test target, which touches none of these.
 [target.'cfg(not(loom))'.dev-dependencies]
+# The statistics-driven benches (`benches/engine.rs`). Default features off:
+# the HTML reports pull a plotting stack nobody reads in CI. Held at 0.5,
+# not the newest: 0.6+ requires `clap ^4.5`, and the CLI pins `clap 4.4`
+# for the MSRV floor — one workspace lockfile cannot hold both.
+criterion = { version = "0.5", default-features = false }
 # The two web-framework examples. Dev-dependencies, so nothing a user of this
 # crate depends on.
 axum = "0.8"
@@ -141,6 +146,16 @@ targets = [
 
 [[bench]]
 name = "read_path"
+harness = false
+required-features = ["json"]
+
+[[bench]]
+name = "engine"
+harness = false
+required-features = ["json"]
+
+[[bench]]
+name = "alloc_profile"
 harness = false
 required-features = ["json"]
 

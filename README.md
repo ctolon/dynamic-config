@@ -96,7 +96,7 @@ schema export, units, the last-known-good cache, testing patterns — lives in
 | [`dynamic-config-s3`](dynamic-config-s3) | S3 & compatibles, ETag polling — needs tokio | Experimental |
 | [`dynamic-config-firestore`](dynamic-config-firestore) | Firestore REST, `updateTime` polling | Experimental |
 | [`dynamic-config-embedded`](dynamic-config-embedded) | the same shape for `no_std` targets | Experimental |
-| [`dynamic-config-cli`](dynamic-config-cli) | `explain` and `diff` on the command line — in-repo, not yet published | Experimental |
+| [`dynamic-config-cli`](dynamic-config-cli) | `explain` and `diff` on the command line — `cargo install dynamic-config-cli` | Experimental |
 
 **Beta**: breaking changes bump the minor pre-1.0 and are announced in the
 changelog. **Experimental**: may change shape without ceremony — pin an
