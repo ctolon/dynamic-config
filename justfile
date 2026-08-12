@@ -71,8 +71,15 @@ embedded:
                 --no-default-features --features json,async
 
 # Every MSRV floor, against real toolchains rather than a manifest's word —
-# the same rows as CI's msrv matrix.
+# the same rows as CI's msrv matrix. The committed lockfile is put back
+# afterwards, whatever happens: a fresh `generate-lockfile` resolves with
+# the MSRV fallback, which silently drops every security `--precise` pin —
+# that is how four patched versions regressed at once, once.
 msrv:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cp Cargo.lock Cargo.lock.pinned
+    trap 'mv Cargo.lock.pinned Cargo.lock' EXIT
     cargo +stable generate-lockfile
     cargo +1.71 check -p dynamic-config --locked --no-default-features --features json,toml,yaml
     cargo +1.71 check -p dynamic-config --locked --no-default-features --features json,async,tracing,clap
@@ -98,11 +105,16 @@ hack:
     cargo check -p dynamic-config --no-default-features --features decrypt
 
 # The declared minimum dependency versions actually resolve — CI's
-# `minimal-versions` job. Needs a nightly toolchain.
+# `minimal-versions` job. Needs a nightly toolchain. The committed
+# lockfile is put back afterwards — regenerating one is what loses the
+# security pins, not what restores them.
 minimal-versions:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cp Cargo.lock Cargo.lock.pinned
+    trap 'mv Cargo.lock.pinned Cargo.lock' EXIT
     cargo +nightly generate-lockfile -Z direct-minimal-versions
     cargo +stable check -p dynamic-config --locked --all-features
-    cargo +stable generate-lockfile
 
 # Advisories, licences and registries.
 audit:
