@@ -14,7 +14,7 @@ name = "dynamic-config"
 path = "src/main.rs"
 
 [dependencies]
-dynamic-config = { version = "=0.4.0", path = "../dynamic-config", features = [
+dynamic-config = { workspace = true, features = [
     "json",
     "toml",
     "yaml",
