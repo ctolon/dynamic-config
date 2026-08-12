@@ -300,7 +300,7 @@ Pydantic dataclasses, generics, discriminated unions — and
 `pydantic_settings.BaseSettings`, whose own sourcing declaration
 `DynamicConfig.from_settings(...)` translates into engine sources so an
 existing settings class keeps the variable names its deployment already
-sets. [What a model may be](python/types.md#what-a-model-may-be) and
+sets. [What a schema may be](python/types.md#what-a-schema-may-be) and
 [pydantic-settings](python/types.md#pydantic-settings).
 
 ## What is not exposed, and why
