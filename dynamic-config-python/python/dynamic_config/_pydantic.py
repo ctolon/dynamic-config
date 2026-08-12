@@ -143,33 +143,161 @@ def secret_paths(
     for name, info in fields.items():
         keys = keys_of(name, info)
 
-        for candidate in _unwrap(info.annotation):
-            if is_secret_type(candidate):
-                paths.extend(f"{_prefix}{key}" for key in keys)
-                break
-
-            # A `RootModel` wraps its content in a field named `root` that
-            # no file ever writes: the data sits where the *outer* field
-            # is, so it keeps this prefix rather than growing one.
-            if (
-                isinstance(candidate, type)
-                and issubclass(candidate, RootModel)
-                and candidate is not RootModel
-            ):
-                root = candidate.model_fields.get("root")
-
-                if root is not None and any(
-                    is_secret_type(inner) for inner in _unwrap(root.annotation)
-                ):
-                    paths.extend(f"{_prefix}{key}" for key in keys)
-                    break
-
-            if fields_of(candidate) is not None:
-                for key in keys:
-                    paths.extend(secret_paths(candidate, f"{_prefix}{key}.", seen))
+        for key in keys:
+            paths.extend(_paths_under(info.annotation, f"{_prefix}{key}", seen))
 
     # Order is the model's, duplicates are not interesting to the engine.
     return list(dict.fromkeys(paths))
+
+
+def _paths_under(annotation: Any, path: str, seen: frozenset[Any]) -> list[str]:
+    """Every secret path one field contributes, at ``path``.
+
+    Three shapes, and the difference between them is which *path* the
+    engine will be asked about later:
+
+    - a secret itself, or anything holding one inside a **container** —
+      redacted at ``path``, whole. A `list[Credentials]` puts its
+      passwords at `users.0.password`, and neither `touches_secret` nor
+      the cache's `remove_path` has an indexed-path vocabulary; redacting
+      the containing field is the answer that is wrong in the safe
+      direction. Losing `users`'s non-secret siblings from a diagnostic
+      costs a reader some context. Not losing them costs a password.
+    - a nested model or dataclass — recursed into, under ``path``.
+    - a `RootModel` — recursed into *at* ``path``, because its `root`
+      field is synthetic and no file ever writes it.
+    """
+    if _holds_secret_in_container(annotation, seen):
+        return [path]
+
+    found: list[str] = []
+
+    for candidate in _members(annotation):
+        if is_secret_type(candidate):
+            return [path]
+
+        root = _root_annotation(candidate)
+
+        if root is not None:
+            # The data sits where the *outer* field is, so the root
+            # annotation is walked at this path rather than under it.
+            found.extend(_paths_under(root, path, seen | {candidate}))
+            continue
+
+        if fields_of(candidate) is not None:
+            found.extend(secret_paths(candidate, f"{path}.", seen))
+
+    return found
+
+
+def _members(annotation: Any) -> list[Any]:
+    """A union's members, or the annotation itself — containers intact."""
+    origin = typing.get_origin(annotation)
+
+    if origin is None:
+        return [annotation]
+
+    if _is_container(origin):
+        # A container is not one of its members: descending into it here
+        # is what produced `users.password` for a `list[Credentials]`.
+        return []
+
+    return [
+        member
+        for argument in typing.get_args(annotation)
+        for member in _members(argument)
+    ]
+
+
+def _is_container(origin: Any) -> bool:
+    """Whether an annotation's origin holds *many* values under one key."""
+    return origin in {list, set, frozenset, tuple, dict} or (
+        isinstance(origin, type)
+        and issubclass(origin, (list, set, frozenset, tuple, dict))
+    )
+
+
+def _root_annotation(candidate: Any) -> Any | None:
+    """A ``RootModel``'s content type, or ``None`` for anything else."""
+    if (
+        isinstance(candidate, type)
+        and issubclass(candidate, RootModel)
+        and candidate is not RootModel
+    ):
+        root = candidate.model_fields.get("root")
+
+        return None if root is None else root.annotation
+
+    return None
+
+
+def _holds_secret_in_container(
+    annotation: Any, seen: frozenset[Any], _depth: int = 0
+) -> bool:
+    """Whether a secret sits under a container in ``annotation``.
+
+    Answered for the field as a whole rather than per path, because the
+    answer decides whether the *field* is redacted. `_depth` guards a
+    self-referencing model whose recursion `seen` cannot catch — the
+    shapes here are types, not values, and a redaction list is about
+    shapes.
+    """
+    if _depth > 8:  # pragma: no cover - a model nested past all reason
+        return False
+
+    origin = typing.get_origin(annotation)
+
+    if origin is not None and _is_container(origin):
+        return any(
+            _contains_secret(argument, seen, _depth + 1)
+            for argument in typing.get_args(annotation)
+            if argument is not Ellipsis
+        )
+
+    return any(
+        _holds_secret_in_container(argument, seen, _depth + 1)
+        for argument in typing.get_args(annotation)
+    )
+
+
+def _contains_secret(annotation: Any, seen: frozenset[Any], depth: int = 0) -> bool:
+    """Whether ``annotation`` is, or holds anywhere inside it, a secret."""
+    if depth > 8:  # pragma: no cover - as above
+        return False
+
+    for candidate in _members(annotation):
+        if is_secret_type(candidate):
+            return True
+
+        root = _root_annotation(candidate)
+
+        if root is not None:
+            if _contains_secret(root, seen, depth + 1):
+                return True
+
+            continue
+
+        if candidate in seen:
+            continue
+
+        fields = fields_of(candidate)
+
+        if fields is None:
+            continue
+
+        for info in fields.values():
+            if _contains_secret(info.annotation, seen | {candidate}, depth + 1):
+                return True
+
+    # And the containers inside it, which `_members` deliberately skips.
+    if typing.get_origin(annotation) is not None:
+        return any(
+            _contains_secret(argument, seen, depth + 1)
+            for argument in typing.get_args(annotation)
+            if argument is not Ellipsis
+        )
+
+    return False
 
 
 def leaf_paths(model: Any, _seen: frozenset[Any] = frozenset()) -> list[list[str]]:

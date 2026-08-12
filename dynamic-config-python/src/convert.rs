@@ -7,6 +7,7 @@
 //! become a float.
 
 use pyo3::prelude::*;
+use pyo3::types::IntoPyDict;
 use pyo3::types::{PyBool, PyDict, PyFloat, PyInt, PyList, PyString, PyTuple};
 use serde_json::{Map, Number, Value};
 
@@ -157,8 +158,18 @@ pub(crate) fn from_py(object: &Bound<'_, PyAny>) -> PyResult<Value> {
     }
 
     // A Pydantic model renders itself as configuration data through the
-    // standard door.
-    if let Ok(dumped) = object.call_method0(pyo3::intern!(py, "model_dump")) {
+    // standard door — `by_alias`, because every path in this library is
+    // the name a *file* uses. A zero-argument dump spells fields by their
+    // Python names, and a model whose field carries `alias="VALUE"` then
+    // round-trips to a key `model_validate` does not accept: the default
+    // was silently dropped rather than refused. It also lines the paths
+    // `changed_paths` reports up with the ones `explain` and the secret
+    // list already use.
+    if let Ok(dumped) = object.call_method(
+        pyo3::intern!(py, "model_dump"),
+        (),
+        Some(&[(pyo3::intern!(py, "by_alias"), true)].into_py_dict(py)?),
+    ) {
         return from_py(&dumped);
     }
 

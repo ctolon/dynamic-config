@@ -54,7 +54,15 @@ class Watch:
         self._inner.stop()
 
     def detach(self) -> None:
-        """Watches for the rest of the process, whatever happens here."""
+        """Watches for the rest of the process, whatever happens here.
+
+        Deliberately one-way, and it opts out of one guarantee: the
+        `atexit` sweep stops the watchers it can reach, and a detached one
+        is no longer reachable — there is no handle left to stop. That is
+        the trade the call exists to make, and the engine's watcher is
+        built to survive it, but a watcher that must be stopped at exit
+        should be held rather than detached.
+        """
         self._inner.detach()
 
     def __enter__(self) -> Watch:

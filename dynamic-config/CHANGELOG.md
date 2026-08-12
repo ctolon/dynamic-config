@@ -62,6 +62,11 @@ bumps the patch. A change to the minimum supported Rust version is breaking.
   one, so a `date` field met a table and every schema refused it. The
   binding now hands over the text the file wrote, which is what a schema
   can parse.
+- **`Snapshot::to_value`'s integers survived the crossing only up to
+  `i64`.** The binding's export cast anything larger to `f64`, so a
+  perfectly ordinary `u64` identifier came back rounded from
+  `snapshot().to_dict()` while the installed model kept it exactly. The
+  export tries `u64` before the float now.
 - **`bind_env` could not see a `.env` file.** A binding names one
   variable exactly, and a deployment that writes that variable into a
   `.env` file rather than exporting it means the same thing by it — yet

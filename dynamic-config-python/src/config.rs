@@ -27,6 +27,7 @@ use dynamic_config::watch::{WatchHandle, WatchMode};
 use dynamic_config::{Aliases, Builder, CacheMode, Dynamic, EnvBindings, Error, Layer, Remote};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
+use pyo3::{PyTraverseError, PyVisit};
 use serde_json::Value;
 
 use crate::convert;
@@ -193,7 +194,18 @@ impl Inner {
 
             match staged.as_ref() {
                 Some(pending) if pending.tree == *tree => {
-                    if pending.sequence <= self.last_committed.load(Ordering::SeqCst) {
+                    // Claimed, not checked-then-claimed: the two commit
+                    // paths for one install both reach here, and a read
+                    // followed by a later store lets both of them win —
+                    // one reload, two generations, every hook twice. The
+                    // GIL happens to serialise this today; the invariant
+                    // should not depend on that, and free-threaded
+                    // CPython is on the roadmap.
+                    if self
+                        .last_committed
+                        .fetch_max(pending.sequence, Ordering::SeqCst)
+                        >= pending.sequence
+                    {
                         // Already published by the other path.
                         return Ok(());
                     }
@@ -223,7 +235,9 @@ impl Inner {
             }
         };
 
-        self.last_committed.store(sequence, Ordering::SeqCst);
+        // A no-op for the claimed arm above (`fetch_max` already stored
+        // it); the re-validation arm arrives here without having claimed.
+        self.last_committed.fetch_max(sequence, Ordering::SeqCst);
 
         let previous = self
             .cache
@@ -400,17 +414,18 @@ fn scrub_validation(py: Python<'_>, failure: &PyErr) -> String {
             .filter(|path| !path.is_empty())
             .unwrap_or_else(|| "(the configuration)".to_owned());
 
-        let message = report
-            .get_item("msg")
-            .ok()
-            .and_then(|message| message.extract::<String>().ok())
-            .unwrap_or_else(|| "did not validate".to_owned());
-
         let kind = report
             .get_item("type")
             .ok()
             .and_then(|kind| kind.extract::<String>().ok())
             .unwrap_or_default();
+
+        let message = report
+            .get_item("msg")
+            .ok()
+            .and_then(|message| message.extract::<String>().ok())
+            .map(|message| scrub_message(&kind, message))
+            .unwrap_or_else(|| "did not validate".to_owned());
 
         lines.push(if kind.is_empty() {
             format!("{path}: {message}")
@@ -426,6 +441,26 @@ fn scrub_validation(py: Python<'_>, failure: &PyErr) -> String {
     lines.join("; ")
 }
 
+/// One report's message, minus anything a validator wrote itself.
+///
+/// Pydantic's own messages are value-free by construction — "Input should
+/// be a valid integer" names the expectation, never the input. A message
+/// under `value_error` or `assertion_error` is different in kind: it is
+/// whatever the model author passed to `raise ValueError(...)`, and
+/// `raise ValueError(f"invalid token {value}")` is the ordinary way to
+/// write one. That text reaches `str(InvalidError)` and `.errors`, so it
+/// is replaced here rather than trusted; the path and the type are kept,
+/// which is what a person needs to find the field.
+fn scrub_message(kind: &str, message: String) -> String {
+    if matches!(kind, "value_error" | "assertion_error") {
+        return "rejected by a validator (its message is not repeated here, \
+                because a validator's own text can carry the value)"
+            .to_owned();
+    }
+
+    message
+}
+
 /// The scrubbed error reports, as Python data.
 fn scrubbed_reports<'py>(py: Python<'py>, failure: &PyErr) -> Option<Bound<'py, PyList>> {
     let value = failure.value(py);
@@ -436,7 +471,23 @@ fn scrubbed_reports<'py>(py: Python<'py>, failure: &PyErr) -> Option<Bound<'py, 
         let Ok(report) = report else { continue };
         let entry = PyDict::new(py);
 
-        for field in ["loc", "msg", "type", "url"] {
+        let kind = report
+            .get_item("type")
+            .ok()
+            .and_then(|value| value.extract::<String>().ok())
+            .unwrap_or_default();
+
+        // `msg` is rebuilt rather than copied, for the same reason the
+        // rendered message is: a custom validator writes it.
+        if let Ok(message) = report.get_item("msg") {
+            let scrubbed = message
+                .extract::<String>()
+                .map(|text| scrub_message(&kind, text))
+                .unwrap_or_else(|_| "did not validate".to_owned());
+            let _ = entry.set_item("msg", scrubbed);
+        }
+
+        for field in ["loc", "type", "url"] {
             if let Ok(item) = report.get_item(field) {
                 // Everything except `input` and `ctx`, which carry the
                 // value that must not travel.
@@ -618,9 +669,39 @@ impl Config {
         let outcome = py.detach(|| dynamic.load());
 
         match outcome {
-            Ok(_tree) => {
+            Ok(tree) => {
                 // `load` validated on the way through and staged the model
                 // it produced; nothing installs, so nothing is published.
+                //
+                // Matched against *this* call's tree, not taken on trust:
+                // the GIL was released for `dynamic.load()`, so another
+                // load or a watcher-driven reload can have staged its own
+                // model in the meantime, and returning that one would hand
+                // back a candidate resolved from different sources than
+                // the ones this call just read.
+                let staged = self
+                    .inner
+                    .shared
+                    .staged
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+                if let Some(pending) = staged.as_ref() {
+                    if pending.tree == tree {
+                        // Left staged rather than taken: a load installs
+                        // nothing, and stealing the slot would make the
+                        // next install validate the same tree again.
+                        return Ok(pending.model.clone_ref(py));
+                    }
+                }
+
+                drop(staged);
+
+                // Somebody else's model is in the slot. Validating again
+                // costs one pass and answers the question this call asked.
+                Inner::validate(&self.inner.shared, &tree)
+                    .map_err(|error| errors::to_py_err(py, &error))?;
+
                 match self
                     .inner
                     .shared
@@ -629,9 +710,6 @@ impl Config {
                     .unwrap_or_else(std::sync::PoisonError::into_inner)
                     .as_ref()
                 {
-                    // Left staged rather than taken: a load installs
-                    // nothing, and stealing the slot would make the next
-                    // install validate the same tree a second time.
                     Some(pending) => Ok(pending.model.clone_ref(py)),
                     None => Err(pyo3::exceptions::PyRuntimeError::new_err(
                         "the load produced no model, which should be impossible",
@@ -691,6 +769,35 @@ impl Config {
     }
 
     // ── Watching, waking, hooks ────────────────────────────────────────
+
+    /// The edges Python's cycle collector cannot otherwise see.
+    ///
+    /// A registered hook is held here, and the hooks people write capture
+    /// the configuration they were registered on — `lambda old, new:
+    /// config.current()` is the documented idiom. That closes a cycle
+    /// `DynamicConfig → Config → hook → DynamicConfig` running through a
+    /// `#[pyclass]`, and an object with no `tp_traverse` is a wall the
+    /// collector stops at: every configuration built that way leaked,
+    /// with its models and its leaked layers, until the process exited.
+    ///
+    /// Visiting the hooks is enough to break it. The collector only has
+    /// to *reach* the cycle; clearing it happens through the closure,
+    /// which has a `tp_clear` of its own.
+    fn __traverse__(&self, visit: PyVisit<'_>) -> Result<(), PyTraverseError> {
+        // A hook may be running on another thread, and a traverse that
+        // blocked on the lock would block the collector. Skipping the
+        // visit is safe — the collector treats it as "no edges this pass"
+        // and comes back — where deadlocking is not.
+        let Ok(hooks) = self.inner.hooks.try_lock() else {
+            return Ok(());
+        };
+
+        for (_, hook) in hooks.iter() {
+            visit.call(hook)?;
+        }
+
+        Ok(())
+    }
 
     /// Reloads on file changes until the returned handle is stopped.
     #[pyo3(signature = (debounce, poll_interval = None))]
@@ -1211,8 +1318,15 @@ fn value_to_json(value: &dynamic_config::Value) -> Value {
     match value {
         Owned::Null => Value::Null,
         Owned::Bool(boolean) => Value::Bool(*boolean),
+        // `u64` before the float: the crate's integer is an `i128`, and a
+        // perfectly ordinary `u64` identifier above `i64::MAX` used to
+        // fall straight through to `as f64` — so `snapshot().to_dict()`
+        // rounded a value the installed model kept exactly, and the two
+        // public views of one snapshot disagreed. The book promises the
+        // digits survive; this is where that promise is kept.
         Owned::Integer(number) => i64::try_from(*number)
             .map(Value::from)
+            .or_else(|_| u64::try_from(*number).map(Value::from))
             .unwrap_or_else(|_| Value::from(*number as f64)),
         Owned::Float(number) => serde_json::Number::from_f64(*number)
             .map(Value::Number)

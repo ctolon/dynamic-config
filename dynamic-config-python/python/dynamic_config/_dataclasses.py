@@ -287,8 +287,21 @@ def _container(annotation: Any, origin: Any, value: Any, path: str) -> Any:
             for key, item in value.items()
         }
 
-    # `Literal`, `Annotated` and friends: `_unwrap` already flattened what
-    # it could, and what is left is not a structure to check.
+    if origin is typing.Literal:
+        allowed = typing.get_args(annotation)
+
+        # `Literal` is a set of *values*, so this is the one check that
+        # compares against them rather than against a type. `True` and `1`
+        # compare equal in Python and are different configuration values,
+        # so the type has to match too.
+        if any(item == value and type(item) is type(value) for item in allowed):
+            return value
+
+        raise ValidationError(
+            f"{path}: not one of the {len(allowed)} values this field allows"
+        )
+
+    # `Annotated` and friends: what is left is not a structure to check.
     return value
 
 

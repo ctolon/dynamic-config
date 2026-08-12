@@ -235,17 +235,19 @@ class DynamicConfig(Generic[M]):
         for path in _as_paths(config.get("env_file")):
             configuration.env_file(path)
 
+        # Unconditionally, rather than only when a prefix was declared: an
+        # unprefixed settings class still reads the environment — `HOST`,
+        # `PORT`, `DATABASE_URL` — and that is the *common* shape. Only the
+        # name each binding looks for depends on the prefix.
         prefix = config.get("env_prefix", "")
+        delimiter = config.get("env_nested_delimiter") or "_"
+        upper = not config.get("case_sensitive", False)
 
-        if prefix:
-            delimiter = config.get("env_nested_delimiter") or "_"
-            upper = not config.get("case_sensitive", False)
-
-            for segments in _leaf_paths(model):
-                variable = f"{prefix}{delimiter.join(segments)}"
-                configuration.bind_env(
-                    ".".join(segments), variable.upper() if upper else variable
-                )
+        for segments in _leaf_paths(model):
+            variable = f"{prefix}{delimiter.join(segments)}"
+            configuration.bind_env(
+                ".".join(segments), variable.upper() if upper else variable
+            )
 
         return configuration
 
@@ -588,7 +590,16 @@ class DynamicConfig(Generic[M]):
                 return result[1]  # type: ignore[no-any-return]
 
     async def changes(self) -> AsyncIterator[M]:
-        """Yields every model installed from here on.
+        """Yields the installed model, once per wake, from here on.
+
+        Latest wins rather than every-one-in-order: the wait answers with
+        whatever is installed when it returns, so two installs inside one
+        wait yield the second and not both. That is the right shape for
+        configuration — a reader wants what is true now, not a queue of
+        what briefly was — but it does mean this is not a log of installs,
+        and a consumer counting them will count fewer than `generation`
+        says. `on_reload` runs for every install, if that is what you
+        need.
 
         Runtime-agnostic in the same spirit as the Rust ``changes()``: the
         wait happens on a worker thread with the GIL released, so any

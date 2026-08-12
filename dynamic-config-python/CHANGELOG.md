@@ -176,6 +176,75 @@ breaking.
   examples driven the way a test suite drives them, so an example that
   rots fails the suite.
 
+### Fixed
+
+Everything here came out of a review of the release branch, and each one
+is now pinned by a test.
+
+- **A secret inside a container of models was redacted nowhere.** A field
+  like `users: list[Credentials]` with a `SecretStr` inside recorded
+  `users.password`, while the real paths are `users.0.password` — which
+  `touches_secret` cannot match and the cache's path remover cannot
+  descend to, so the password reached the *redacted* cache on disk. The
+  containing field is redacted whole now: wrong in the direction that
+  costs a reader some context rather than the one that costs a password.
+- **A `RootModel` wrapping a model built the wrong path.** For
+  `RootModel[Credentials]` the walk descended through the synthetic
+  `root` field and produced `credentials.root.password`, but a file
+  writes `credentials.password` — so nothing was redacted, in `explain`
+  or in the cache. The root annotation is now walked at the outer path,
+  which is what the comment beside it always claimed.
+- **A validator's own message travelled into the diagnostics.** Pydantic
+  puts the text of a custom `raise ValueError(...)` in `msg`, and
+  `raise ValueError(f"invalid token {value}")` is the ordinary way to
+  write one — so the value reached `str(InvalidError)` and `.errors`.
+  Messages under `value_error` and `assertion_error` are replaced; the
+  path and the type are kept, and Pydantic's own messages (value-free by
+  construction) are untouched.
+- **`from_settings` read no environment at all without an `env_prefix`.**
+  `BaseSettings` reads `HOST` and `PORT` whether or not a prefix is
+  declared, and that is the common shape; the binding loop only ran when
+  a prefix existed, so a file or a default quietly won over a variable
+  that pydantic-settings would have preferred.
+- **`snapshot().to_dict()` rounded a large integer.** A `u64` above
+  `i64::MAX` reached the installed model exactly and the exported
+  snapshot as a float, so the two public views of one snapshot
+  disagreed — against a promise the book makes in as many words.
+- **`Literal` was unchecked in a dataclass schema.** `mode: Literal["read",
+  "write"]` accepted `"delete"`, because a `Literal` reaches the
+  container branch and fell through it. It is checked against its values
+  now, with `True` and `1` kept apart.
+- **`set_defaults(model)` silently dropped aliased fields.** The instance
+  was dumped by field name, so a model whose field carries
+  `alias="VALUE"` round-tripped to a key its own class does not accept —
+  and the default vanished rather than raising. Dumped by alias now,
+  which also lines `changed_paths` up with the paths `explain` and the
+  secret list already use.
+- **A reload hook that captured its configuration leaked it.**
+  `@config.on_reload` closures reading `config.current()` — the
+  documented idiom — close a cycle through the Rust `Config`, which had
+  no `tp_traverse`, so Python's collector could not see the edge and the
+  configuration, its models and its leaked layers lived until the
+  process exited. `Config.__traverse__` closes it.
+- **`load()` could return another thread's candidate.** The GIL is
+  released for the resolve, so a concurrent load or a watcher-driven
+  reload could stage its own model in the window; the returned model is
+  now matched against the tree this call resolved.
+- **A reload could be committed twice.** The staged sequence was read and
+  stored as two steps, so the two commit paths for one install could both
+  win — one reload, two generations, every hook run twice. The claim is a
+  single `fetch_max` now. The GIL happened to serialise it; the invariant
+  no longer depends on that.
+
+### Changed
+
+- `changes()` says what it does: it yields the installed model once per
+  wake, latest-wins, rather than one entry per install. `on_reload` is
+  the surface that runs for every install.
+- `Watch.detach()` records that it opts out of the `atexit` sweep — a
+  detached watcher is no longer reachable, which is the trade the call
+  exists to make.
+
 ### Security
 
 - Pydantic's `ValidationError` echoes the offending input by default;

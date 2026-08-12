@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Optional
 
 import pytest
-from pydantic import BaseModel, SecretBytes, SecretStr
+from pydantic import BaseModel, RootModel, SecretBytes, SecretStr
 
 from dynamic_config import DynamicConfig, InvalidError, secret_paths
 
@@ -214,3 +214,128 @@ def test_aliases_decide_the_name_a_secret_is_known_by(workspace: Path) -> None:
     assert config.current().token.get_secret_value() == PLANTED
     assert PLANTED not in str(config.explain("api_token"))
     assert PLANTED not in Path("aliased-cache.json").read_text()
+
+
+# ── What a review found: paths the redaction list could not express ────
+
+
+class Nested(BaseModel):
+    user: str = "app"
+    password: SecretStr = SecretStr("")
+
+
+class WithContainer(BaseModel):
+    host: str = "example.internal"
+    users: list[Nested] = []
+
+
+class NestedRoot(RootModel[Nested]):
+    pass
+
+
+class WithStructuredRoot(BaseModel):
+    credentials: NestedRoot = NestedRoot(Nested())
+
+
+def test_a_secret_inside_a_container_redacts_the_container(workspace: Path) -> None:
+    """`users.0.password` is a path this crate has no vocabulary for.
+
+    `touches_secret` matches whole dotted segments and the cache's
+    `remove_path` descends through tables, so neither can reach a secret
+    living inside a list. The containing field is redacted instead —
+    wrong in the direction that costs a reader context rather than the
+    direction that costs a password.
+    """
+    assert secret_paths(WithContainer) == ["users"]
+
+    Path("config.toml").write_text(
+        f'[svc]\nhost = "example.internal"\n\n[[svc.users]]\nuser = "app"\n'
+        f'password = "{PLANTED}"\n'
+    )
+
+    config = (
+        DynamicConfig(WithContainer, key="svc")
+        .file("config.toml")
+        .cache("container-cache.json", "redacted")
+    )
+    config.init()
+
+    assert config.current().users[0].password.get_secret_value() == PLANTED
+    assert PLANTED not in str(config.explain("users"))
+    assert PLANTED not in Path("container-cache.json").read_text()
+    # The neighbour is not a secret and still reads normally.
+    assert "example.internal" in str(config.explain("host"))
+
+
+def test_a_root_model_wrapping_a_model_keeps_the_outer_path(
+    workspace: Path,
+) -> None:
+    """A `RootModel`'s `root` field is synthetic; no file writes it."""
+    assert secret_paths(WithStructuredRoot) == ["credentials.password"]
+
+    Path("config.toml").write_text(
+        f'[svc]\n[svc.credentials]\nuser = "app"\npassword = "{PLANTED}"\n'
+    )
+
+    config = (
+        DynamicConfig(WithStructuredRoot, key="svc")
+        .file("config.toml")
+        .cache("root-cache.json", "redacted")
+    )
+    config.init()
+
+    assert config.current().credentials.root.password.get_secret_value() == PLANTED
+    assert PLANTED not in str(config.explain("credentials.password"))
+    assert PLANTED not in Path("root-cache.json").read_text()
+
+
+def test_a_validators_own_message_does_not_travel(workspace: Path) -> None:
+    """Pydantic puts a custom `raise ValueError(...)` text in `msg`.
+
+    Its own messages are value-free by construction — "Input should be a
+    valid integer" names the expectation. A validator's is whatever the
+    author wrote, and `raise ValueError(f"bad token {value}")` is the
+    ordinary way to write one.
+    """
+    from pydantic import field_validator
+
+    class Checked(BaseModel):
+        token: str = ""
+
+        @field_validator("token")
+        @classmethod
+        def refuse(cls, value: str) -> str:
+            if value:
+                raise ValueError(f"invalid token {value}")
+
+            return value
+
+    Path("config.toml").write_text(f'[svc]\ntoken = "{PLANTED}"\n')
+
+    config = DynamicConfig(Checked, key="svc").file("config.toml")
+
+    with pytest.raises(InvalidError) as failure:
+        config.init()
+
+    assert PLANTED not in str(failure.value)
+    assert PLANTED not in repr(failure.value.errors)
+    # The location and the type survive, because those are what a person
+    # needs to find the field.
+    assert "token" in str(failure.value)
+    assert "value_error" in str(failure.value)
+
+
+def test_pydantics_own_messages_are_not_over_scrubbed(workspace: Path) -> None:
+    class Typed(BaseModel):
+        port: int = 1
+
+    Path("config.toml").write_text('[svc]\nport = "not-a-number"\n')
+
+    config = DynamicConfig(Typed, key="svc").file("config.toml")
+
+    with pytest.raises(InvalidError) as failure:
+        config.init()
+
+    assert "valid integer" in str(failure.value), (
+        "Pydantic's own message names the expectation, never the input"
+    )

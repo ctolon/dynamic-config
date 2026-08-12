@@ -681,3 +681,75 @@ def test_from_settings_leaves_room_for_more_sources(workspace: Path) -> None:
     config.init()
 
     assert config.current().host == "chained"
+
+
+def test_from_settings_binds_the_environment_without_a_prefix(
+    workspace: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The common shape: a settings class that declares no `env_prefix`.
+
+    `BaseSettings` reads `HOST` and `PORT` in that configuration, so
+    binding only when a prefix exists meant the environment reached
+    nothing at all — silently, because an empty prefix is also not a
+    declaration worth warning about.
+    """
+
+    class Bare(BaseSettings):
+        host: str = "default"
+        port: int = 1
+
+    Path("config.toml").write_text('[s]\nhost = "from-file"\nport = 1\n')
+    monkeypatch.setenv("HOST", "from-env")
+    monkeypatch.setenv("PORT", "9999")
+
+    config = DynamicConfig.from_settings(Bare, key="s").file("config.toml")
+    config.init()
+
+    assert config.current().port == 9999
+    assert config.current().host == "from-env"
+    assert "PORT" in str(config.source_of("port"))
+
+
+def test_set_defaults_from_an_aliased_model_keeps_its_values(
+    workspace: Path,
+) -> None:
+    """A model dumped by field name is a model the same class refuses.
+
+    Without `by_alias`, `Aliased(VALUE=7)` round-tripped to `{"value": 7}`,
+    which `model_validate` ignores — so the default vanished silently
+    rather than raising.
+    """
+
+    class AliasedDefaults(BaseModel):
+        value: int = Field(default=0, alias="VALUE")
+
+    Path("config.toml").write_text("[s]\n")
+
+    config = DynamicConfig(AliasedDefaults, key="s").file("config.toml")
+    config.set_defaults(AliasedDefaults(VALUE=7))
+    config.init()
+
+    assert config.current().value == 7
+
+
+def test_a_snapshot_keeps_a_large_integer_whole(workspace: Path) -> None:
+    """The two public views of one snapshot have to agree.
+
+    A `u64` above `i64::MAX` is an ordinary identifier. It reached the
+    model exactly and the snapshot as a rounded float, which the book
+    promises does not happen.
+    """
+
+    class Big(BaseModel):
+        identifier: int = 0
+
+    Path("config.json").write_text('{"s": {"identifier": 18446744073709551615}}')
+
+    config = DynamicConfig(Big, key="s").file("config.json")
+    config.init()
+
+    exported = config.snapshot().to_dict()["identifier"]
+
+    assert config.current().identifier == 18446744073709551615
+    assert exported == config.current().identifier
+    assert isinstance(exported, int), "a float here has already dropped digits"

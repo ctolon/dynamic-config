@@ -65,13 +65,23 @@ jobs:
       # `etcd-client` compiles its gRPC stubs at build time and needs `protoc`.
       - run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - run: cargo fmt --all -- --check
-      - run: cargo clippy --workspace --all-targets --all-features
+      # `--exclude dynamic-config-python` for the same reason ci.yml and
+      # the justfile exclude it: an extension module links no libpython, so
+      # its Rust test target is a harness with nothing behind it. It links
+      # on Linux today and would not on every platform — and a release
+      # gate is the wrong place to find that out. Its library is linted on
+      # its own line instead.
+      - run: >
+          cargo clippy --workspace --all-targets --all-features
+          --exclude dynamic-config-python
+      - run: cargo clippy -p dynamic-config-python --lib --all-features
       # The same excludes as ci.yml's test job: the container suites need
       # Docker images pulled and a long leash, and they gate merges to main —
       # a release build re-proving them adds an hour, not confidence. The
       # embedded crate has its own features and no `full`.
       - run: >
           cargo test --workspace --features full
+          --exclude dynamic-config-python
           --exclude dynamic-config-etcd
           --exclude dynamic-config-consul
           --exclude dynamic-config-nats
@@ -163,7 +173,19 @@ jobs:
     # `maturin upload --skip-existing` makes a run that changed nothing
     # here a no-op. A Python-only release is a manual dispatch of this
     # workflow after its version moves.
-    if: needs.decide.outputs.release == 'true' || github.event_name == 'workflow_dispatch'
+    # `always()` rather than the bare condition: a job with `needs` carries
+    # an implicit `success()`, and an `if` only replaces it when it names a
+    # status function. On a Python-only dispatch the workspace version has
+    # not moved, so `publish` is *skipped* — and a skipped dependency
+    # skipped this job too, which meant the manual wheel wave RELEASING.md
+    # documents could never actually run. `publish` is still required not
+    # to have *failed*.
+    if: >-
+      always()
+      && needs.decide.result == 'success'
+      && needs.publish.result != 'failure'
+      && needs.publish.result != 'cancelled'
+      && (needs.decide.outputs.release == 'true' || github.event_name == 'workflow_dispatch')
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     strategy:
@@ -205,7 +227,11 @@ jobs:
   publish-wheels:
     name: publish the wheels
     needs: [decide, wheels]
-    if: needs.decide.outputs.release == 'true' || github.event_name == 'workflow_dispatch'
+    # The same shape as `wheels`, and for the same reason.
+    if: >-
+      always()
+      && needs.wheels.result == 'success'
+      && (needs.decide.outputs.release == 'true' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

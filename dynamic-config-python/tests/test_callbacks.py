@@ -309,3 +309,41 @@ def test_a_hook_may_reload_nothing_and_read_everything(workspace: Path) -> None:
     assert answers[1] == 2, "the generation is already bumped when a hook runs"
 
     inspect.close()
+
+
+def test_a_hook_that_captures_the_configuration_is_still_collectable(
+    workspace: Path,
+) -> None:
+    """The documented idiom must not leak the configuration.
+
+    `@config.on_reload` closures that read `config.current()` close a
+    cycle through the Rust `Config`, and a `#[pyclass]` with no
+    `tp_traverse` is a wall the collector stops at — so every
+    configuration built that way lived until the process exited, models,
+    hooks and leaked layers included. `Config.__traverse__` is what lets
+    the collector see the edge.
+    """
+    import gc
+    import weakref
+
+    def build(capture: bool) -> weakref.ref[DynamicConfig[Service]]:
+        write()
+        config = loaded()
+
+        if capture:
+            config.on_reload(lambda _old, _new: config.current())
+        else:
+            config.on_reload(lambda _old, _new: None)
+
+        return weakref.ref(config)
+
+    captured = [build(True) for _ in range(3)]
+    plain = [build(False) for _ in range(3)]
+
+    gc.collect()
+    gc.collect()
+
+    assert [reference() for reference in captured] == [None, None, None], (
+        "a hook capturing its own configuration kept it alive"
+    )
+    assert [reference() for reference in plain] == [None, None, None]

@@ -18,7 +18,7 @@ import uuid
 from dataclasses import dataclass, field
 from decimal import Decimal
 from pathlib import Path
-from typing import Optional, Union
+from typing import Literal, Optional, Union
 
 import pytest
 
@@ -66,6 +66,16 @@ class Unbuildable:
 @dataclass
 class Impossible:
     thing: Unbuildable = field(default_factory=lambda: Unbuildable(0, 0))
+
+
+@dataclass
+class Modes:
+    mode: Literal["read", "write"] = "read"
+
+
+@dataclass
+class Flagged:
+    flag: Literal[True, False] = False
 
 
 @dataclass
@@ -490,3 +500,23 @@ def test_dataclasses_are_not_frozen_by_this_library(workspace: Path) -> None:
 
     with pytest.raises(dataclasses.FrozenInstanceError):
         loaded.host = "no"  # type: ignore[misc]
+
+
+def test_a_literal_field_accepts_only_its_own_values(workspace: Path) -> None:
+    """`Literal` is a set of values, and the adapter promises to check it.
+
+    It reached the container branch and fell through unchecked, so
+    `mode = "delete"` installed cleanly against
+    `Literal["read", "write"]`.
+    """
+    assert load(Modes, '[db]\nmode = "write"\n').mode == "write"
+
+    with pytest.raises(InvalidError, match="mode"):
+        load(Modes, '[db]\nmode = "delete"\n')
+
+
+def test_a_literal_keeps_bool_and_int_apart(workspace: Path) -> None:
+    with pytest.raises(InvalidError, match="flag"):
+        load(Flagged, "[db]\nflag = 1\n")
+
+    assert load(Flagged, "[db]\nflag = true\n").flag is True
