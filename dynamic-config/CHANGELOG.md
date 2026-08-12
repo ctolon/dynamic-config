@@ -25,6 +25,8 @@ bumps the patch. A change to the minimum supported Rust version is breaking.
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-08-12
+
 ### Added
 
 - `Builder::validate` accepts closures, not just function pointers: a
@@ -234,7 +236,8 @@ Initial release.
 - Diagnostics report paths and types, never values — enforced by its own
   test suite.
 
-[Unreleased]: https://github.com/ctolon/dynamic-config/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/ctolon/dynamic-config/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/ctolon/dynamic-config/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/ctolon/dynamic-config/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/ctolon/dynamic-config/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/ctolon/dynamic-config/compare/v0.1.0...v0.2.0
