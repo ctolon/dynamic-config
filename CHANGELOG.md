@@ -25,6 +25,22 @@ bumps the patch. A change to the minimum supported Rust version is breaking.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The engine**: `clear_remote()` no longer ends a running watch, and a
+  fetch that lands after its source was replaced no longer reports on the
+  replacement's health. See `dynamic-config/CHANGELOG.md`.
+- **The config server**: a response can no longer carry the previous
+  document under the new generation; a stream resumed from a previous
+  process is no longer left silent; SIGTERM is handled; shutdown is
+  bounded; a TLS connection has a deadline after the handshake; a section
+  no route could reach is refused at startup; and on the client side a
+  password in the URL reaches no diagnostic, while the fetch deadline now
+  covers the response body. See `dynamic-config-server/CHANGELOG.md`.
+- **The git store**: a credential in the URL no longer reaches `Builder`'s
+  `Debug`, and one working directory can no longer be claimed twice under
+  two spellings. See `dynamic-config-git/CHANGELOG.md`.
+
 ## [0.6.0] — 2026-08-13
 
 ### Added

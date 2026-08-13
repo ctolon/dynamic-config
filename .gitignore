@@ -1,5 +1,8 @@
-# Build output. The whole workspace shares one, so one rule covers ten crates.
-/target/
+# Build output. The workspace shares one — and it is not the only one: a
+# doctest that writes a file writes it relative to *its* crate, under a
+# `target/` an anchored rule would not have covered. Unanchored, so every
+# one of them is ignored wherever it is.
+target/
 
 # `cargo package` and `cargo publish` write here; the tarballs are artefacts of
 # a release, not part of one.

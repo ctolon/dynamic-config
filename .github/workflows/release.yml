@@ -243,6 +243,19 @@ jobs:
       # order, and `dynamic_config_py-` sorts before `dynamic_config_py_remote`
       # — so the extra never resolves to something whose requirement is not
       # on PyPI yet.
+      #
+      # It carries `dynamic-config-etcd`, whose gRPC client compiles its
+      # stubs at build time and needs `protoc` — which no runner image has.
+      # Every other job in this repository installs it with `apt-get`; that
+      # would not work here, because the Linux rows of this matrix build
+      # *inside* the manylinux container and a package installed on the
+      # runner is not in it. So the two halves are installed separately:
+      # `before-script-linux` runs in the container, and the macOS and
+      # Windows rows are the runner itself.
+      - if: runner.os == 'macOS'
+        run: brew install protobuf
+      - if: runner.os == 'Windows'
+        run: choco install --no-progress -y protoc
       - uses: PyO3/maturin-action@e10f6c464b90acceb5f640d31beda6d586ba7b4a # v1
         env:
           CARGO_TARGET_DIR: ${{ github.workspace }}/target/python-remote
@@ -251,6 +264,37 @@ jobs:
           args: --release --out dist --manifest-path dynamic-config-python-remote/Cargo.toml
           target: ${{ matrix.target }}
           manylinux: ${{ matrix.manylinux }}
+          # The container is whichever manylinux image maturin selects, and
+          # they are not one distribution: the x86_64 image is RPM-based and
+          # the cross image for aarch64 is Debian-based. Asking the package
+          # manager that is present is shorter than pinning the image.
+          #
+          # A packaged `protoc` is not enough on its own — the older images
+          # carry a protobuf 2 compiler, which cannot read the proto3 files
+          # `etcd-client` builds from — so the version is checked and the
+          # official release is fetched when it is too old. `uname -m` is
+          # the *host* architecture even for the aarch64 row, which
+          # cross-compiles, and that is the binary that has to run.
+          before-script-linux: |
+            set -eux
+            if command -v dnf >/dev/null 2>&1; then
+              dnf install -y protobuf-compiler unzip || true
+            elif command -v yum >/dev/null 2>&1; then
+              yum install -y protobuf-compiler unzip || true
+            else
+              apt-get update && apt-get install -y protobuf-compiler unzip
+            fi
+            if ! protoc --version 2>/dev/null | grep -qE 'libprotoc (3|[1-9][0-9])'; then
+              version=29.3
+              case "$(uname -m)" in
+                aarch64|arm64) arch=aarch_64 ;;
+                *) arch=x86_64 ;;
+              esac
+              curl -fsSL -o /tmp/protoc.zip \
+                "https://github.com/protocolbuffers/protobuf/releases/download/v${version}/protoc-${version}-linux-${arch}.zip"
+              unzip -o /tmp/protoc.zip -d /usr/local
+            fi
+            protoc --version
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: wheels-${{ matrix.os }}-${{ matrix.target }}

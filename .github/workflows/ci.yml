@@ -67,6 +67,11 @@ jobs:
           --exclude dynamic-config-python
           --exclude dynamic-config-python-remote
       - run: cargo clippy -p dynamic-config-python --lib
+      # And the remote wheel's Rust half, excluded from the sweeps for the
+      # same reason and otherwise the one crate in this workspace with no
+      # lint gate at all. `justfile` has carried both lines since the crate
+      # landed; this is CI catching up to the gate `just check` already is.
+      - run: cargo clippy -p dynamic-config-python-remote --lib
 
   test:
     strategy:
@@ -111,6 +116,24 @@ jobs:
       # workspace test run above.
       - run: cargo build -p dynamic-config-git --examples
       - run: cargo build -p dynamic-config-server --all-features --examples
+      # The config server's own features are opt-in, so the workspace run
+      # above — which asks for `full`, a feature this crate does not have —
+      # tests it with *none* of them: `tests/tls.rs` and `tests/client.rs`
+      # are `#![cfg(feature = ...)]` in their entirety and compile to
+      # nothing. The suite that asserts a handshake still demands a
+      # certificate is exactly the one that was not running.
+      #
+      # `justfile` has had this line since the crate landed; this is CI
+      # catching up to it.
+      #
+      # Linux only, and stated rather than assumed: what these suites prove
+      # — that a handshake demands a certificate, that a section that is not
+      # yours is the same 404 — is the same on every platform, and the one
+      # part that is not (the refusal to read a world-readable key) is
+      # already `#[cfg(unix)]`. The three-runner matrix exists for the
+      # *watcher*, which this crate does not own.
+      - if: runner.os == 'Linux'
+        run: cargo test -p dynamic-config-server --all-features
       # One of them is *run*: `ini_provider` is the book's worked answer to
       # "can I plug in a parser for a format you do not read", and a book
       # snippet whose output no longer matches is worse than no snippet. It

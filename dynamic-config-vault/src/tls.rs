@@ -7,6 +7,10 @@
 //! — none of which have an HTTP client in their tree, and none of which
 //! should grow one because three siblings share a PEM parser. The shared
 //! *vocabulary* is in `store-core`; only the translation is copied.
+//!
+//! The claim in the first sentence is checked rather than asked for:
+//! `dynamic-config-store-core/tests/copies.rs` compares the three files and
+//! fails if one has moved without the others.
 
 use std::time::Duration;
 
