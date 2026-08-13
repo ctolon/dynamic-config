@@ -9,7 +9,12 @@
 
 use std::path::{Path, PathBuf};
 
-use dynamic_config::{dynamic_config, CacheMode, ErrorKind, Origin};
+use dynamic_config::{dynamic_config, CacheMode, Origin};
+// Only the `cfg(unix)` tests classify an error: the two that do are about
+// permissions and symlinks. Unconditionally imported, this is an unused
+// import on Windows, which `-D warnings` refuses.
+#[cfg(unix)]
+use dynamic_config::ErrorKind;
 use serde::Deserialize;
 
 /// This test's own mount, emptied first so a previous run cannot supply a key
