@@ -768,7 +768,6 @@ impl std::fmt::Debug for GitSource {
 /// working directory another source already holds — is decided here, at
 /// [`build`](Self::build), rather than at the first fetch. A configuration
 /// mistake should fail where it was made.
-#[derive(Debug)]
 #[must_use]
 pub struct Builder {
     url: String,
@@ -781,6 +780,29 @@ pub struct Builder {
     timeout: Duration,
     max_bytes: u64,
     compact_after: u32,
+}
+
+// Hand-written for the same reason [`GitSource`]'s is, and it is not
+// redundant with it: a builder holds the URL from the moment it is created
+// until `build` consumes it, so a `dbg!` or a `tracing::debug!(?builder)`
+// during construction — the place a configuration is being got right, which
+// is where people print things — would disclose exactly the credential the
+// source is careful never to print.
+impl std::fmt::Debug for Builder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Builder")
+            .field("url", &redacted(&self.url))
+            .field("reference", &self.reference)
+            .field("path", &self.path)
+            .field("format", &self.format)
+            .field("credential", &self.credential)
+            .field("tls", &self.tls)
+            .field("cache_dir", &self.cache_dir)
+            .field("timeout", &self.timeout)
+            .field("max_bytes", &self.max_bytes)
+            .field("compact_after", &self.compact_after)
+            .finish()
+    }
 }
 
 impl Builder {
@@ -1253,5 +1275,21 @@ mod tests {
         // The user half survives, which is what makes the redaction usable
         // rather than a black hole.
         assert!(printed.contains("x-access-token"), "{printed}");
+    }
+
+    /// The same planted credential, one step earlier. A builder holds the
+    /// URL from `builder()` to `build()`, and construction is exactly where
+    /// somebody prints things to see what they have configured.
+    #[test]
+    fn a_token_in_the_url_does_not_reach_the_builders_debug_either() {
+        let builder =
+            GitSource::builder("https://x-access-token:ghs_hunter2@github.com/acme/config.git")
+                .path("config.yaml")
+                .credential(Credential::token("ghs_hunter2-as-well"));
+
+        let printed = format!("{builder:?}");
+
+        assert!(!printed.contains("hunter2"), "{printed}");
+        assert!(printed.contains("github.com/acme/config.git"), "{printed}");
     }
 }

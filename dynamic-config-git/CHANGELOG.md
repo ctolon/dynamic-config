@@ -25,6 +25,25 @@ bumps the patch. A change to the minimum supported Rust version is breaking.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A credential in the URL no longer reaches `Builder`'s `Debug`.**
+  `GitSource` redacts it and the builder derived its own, so
+  `https://user:token@host/repo.git` printed verbatim for the whole life of
+  the builder — which is during construction, the place people print things
+  to see what they have configured. Hand-written now, like the source's, and
+  the planted-token test covers both.
+
+### Security
+
+- **A working directory can no longer be claimed twice under two
+  spellings.** The same-process claim compared paths lexically, so `cache`
+  and `./cache` — or two symlinks to one directory — were two claims, each
+  with its own fetch mutex: two sources fetching into one object database,
+  where one's `compact` can empty it while the other is reading. The claim
+  is on the resolved directory now, and holds for a directory the fetch has
+  not created yet.
+
 ## [0.6.0] — 2026-08-13
 
 ### Added

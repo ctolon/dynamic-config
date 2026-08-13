@@ -274,19 +274,32 @@ fn empty(directory: &Path) -> std::io::Result<()> {
 }
 
 /// A caller-named directory, held against a second source in this process.
-pub(crate) struct Claimed(PathBuf);
+pub(crate) struct Claimed {
+    /// As the caller wrote it: what is opened, and what error messages say.
+    path: PathBuf,
+    /// What is actually held, by [`identity`]. Two spellings of one
+    /// directory claim the same thing.
+    identity: PathBuf,
+}
 
 impl Claimed {
     /// Claims `path`.
     ///
     /// # Errors
     ///
-    /// If another live source in this process already named it.
+    /// If another live source in this process already named it — under any
+    /// spelling. `cache` and `./cache` are one directory, and so are two
+    /// symlinks to it; a lexical comparison would have let both through and
+    /// given each its own fetch mutex, which is two fetches into one object
+    /// database and a `compact` that can empty it while the other is
+    /// reading.
     pub(crate) fn new(path: PathBuf) -> Result<Self, Error> {
+        let identity = identity(&path);
+
         let mut claimed = claimed();
         let taken = claimed.get_or_insert_with(HashSet::new);
 
-        if !taken.insert(path.clone()) {
+        if !taken.insert(identity.clone()) {
             return Err(Error::remote(format!(
                 "git: {} is already the working directory of another source in \
                  this program; two sources fetching into one directory would \
@@ -295,24 +308,66 @@ impl Claimed {
             )));
         }
 
-        Ok(Self(path))
+        Ok(Self { path, identity })
     }
 
     fn path(&self) -> &Path {
-        self.0.as_path()
+        self.path.as_path()
     }
+}
+
+/// What two spellings of one directory have in common.
+///
+/// `canonicalize` where it can: it resolves `.`, `..`, a relative path
+/// against the working directory, and every symlink on the way. It needs
+/// the path to *exist*, though, and a working directory is routinely
+/// claimed before it is created — so what does not exist yet is
+/// canonicalized as far as it goes and the missing tail is appended.
+///
+/// Neither step is a security boundary and neither is asked to be. This is
+/// a same-process bookkeeping question — which is why the answer is allowed
+/// to fall back to the path as written when the filesystem will not answer
+/// at all.
+fn identity(path: &Path) -> PathBuf {
+    if let Ok(resolved) = path.canonicalize() {
+        return resolved;
+    }
+
+    let mut missing = Vec::new();
+    let mut existing = path;
+
+    while let (Some(parent), Some(name)) = (existing.parent(), existing.file_name()) {
+        missing.push(name.to_owned());
+        existing = parent;
+
+        if let Ok(resolved) = existing.canonicalize() {
+            let mut identity = resolved;
+
+            for name in missing.iter().rev() {
+                identity.push(name);
+            }
+
+            return identity;
+        }
+    }
+
+    // Nothing on the path exists, so there is nothing to resolve against.
+    // `absolute` still folds `./` and settles a relative path against the
+    // working directory, which is the pair of spellings this is mostly
+    // about; a failure leaves the path as the caller wrote it.
+    std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
 impl std::fmt::Debug for Claimed {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("Claimed").field(&self.0).finish()
+        f.debug_tuple("Claimed").field(&self.path).finish()
     }
 }
 
 impl Drop for Claimed {
     fn drop(&mut self) {
         if let Some(taken) = claimed().as_mut() {
-            taken.remove(&self.0);
+            taken.remove(&self.identity);
         }
     }
 }
@@ -456,6 +511,54 @@ mod tests {
         // replaces a source can reuse the directory it paid to fill.
         drop(first);
         Claimed::new(path).expect("the claim ends with the source");
+    }
+
+    /// The claim is on a *directory*, not on a string. Two spellings of one
+    /// path — and two symlinks to it — are one claim, because what they
+    /// would share is one object database and one `compact` that can empty
+    /// it under the other reader.
+    #[test]
+    fn one_directory_under_two_spellings_is_one_claim() {
+        let directory = Temporary::new().unwrap();
+        let path = directory.path().join("shared");
+        std::fs::create_dir(&path).unwrap();
+
+        let _first = Claimed::new(path.clone()).expect("nobody has it yet");
+
+        // `dir/./shared` and `dir/shared/../shared` name what the first
+        // source is already fetching into.
+        for spelling in [
+            directory.path().join(".").join("shared"),
+            path.join("..").join("shared"),
+        ] {
+            Claimed::new(spelling.clone())
+                .expect_err("the same directory, spelled differently, is the same directory");
+        }
+
+        // And through a symlink, which is the shape a deployment reaches by
+        // accident rather than by writing `..`.
+        #[cfg(unix)]
+        {
+            let link = directory.path().join("by-another-name");
+            std::os::unix::fs::symlink(&path, &link).unwrap();
+
+            Claimed::new(link).expect_err("a symlink to a claimed directory is that directory");
+        }
+    }
+
+    /// A working directory is routinely claimed before it exists — the
+    /// fetch creates it — so the identity has to survive a path the
+    /// filesystem cannot resolve yet, and still see through the part of it
+    /// that does exist.
+    #[test]
+    fn a_directory_that_does_not_exist_yet_can_still_be_claimed_once() {
+        let directory = Temporary::new().unwrap();
+        let path = directory.path().join("not-yet");
+
+        let _first = Claimed::new(path.clone()).expect("nobody has it yet");
+
+        Claimed::new(directory.path().join(".").join("not-yet"))
+            .expect_err("the same directory that does not exist yet is still the same one");
     }
 
     /// Builds a directory that looks like an object database holding `count`
