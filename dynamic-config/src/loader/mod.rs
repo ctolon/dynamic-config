@@ -20,7 +20,8 @@ mod aliases_pass;
 mod environment;
 mod origin;
 mod recover;
-mod sections;
+mod secrets;
+pub(crate) mod sections;
 
 use figment::value::Dict;
 use figment::Figment;
@@ -38,8 +39,11 @@ use crate::source::LoadSpec;
 use aliases_pass::apply_aliases;
 use environment::{environment, merge_env_files};
 use origin::convert;
+use secrets::merge_secrets_dir;
 
+pub(crate) use origin::translate;
 pub(crate) use recover::recover;
+pub(crate) use sections::parse_document;
 
 /// Metadata name for the recovery provider.
 pub(crate) const CACHED_NAME: &str = "the last configuration that worked";
@@ -177,6 +181,17 @@ const LAYERS: &[LayerDef] = &[
                 .is_some_and(|remote| remote.document().is_some())
         },
         merge: merge_remote,
+    },
+    // Above the remote store and below the environment, which is the same
+    // argument made twice: a mounted secret is a fact about *this*
+    // deployment, so it beats a document a central store hands to every
+    // deployment alike — and loses to a variable exported for this one run,
+    // which is more specific still. pydantic-settings agrees on the second
+    // half and has no remote layer to disagree about the first.
+    LayerDef {
+        name: "secrets",
+        active: |spec| spec.secrets_dir.is_some(),
+        merge: merge_secrets_dir,
     },
     // A `.env` is the environment layer sourced from disk, so it goes just
     // below the real thing: a variable somebody exported for this run beats

@@ -12,8 +12,9 @@ from __future__ import annotations
 import asyncio
 import warnings
 import weakref
-from collections.abc import AsyncIterator, Iterable, Mapping, Sequence
+from collections.abc import AsyncIterator, Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import Executor
+from contextlib import contextmanager
 from typing import (
     Any,
     Callable,
@@ -35,7 +36,8 @@ from ._diagnostics import (
 )
 from ._errors import NotInitialisedError
 from ._executor import default_executor
-from ._lifetime import _LIVE_CONFIGS, HookGuard, Watch
+from ._lifetime import _LIVE_CONFIGS, HookGuard, Watch, _register
+from ._remote import RemoteSource
 from ._schema import schema_for
 from ._settings import (
     _SETTINGS_SOURCING,
@@ -44,6 +46,7 @@ from ._settings import (
     _is_settings,
     _leaf_paths,
 )
+from ._telemetry import ConfigStatus, RemoteStatus
 
 M = TypeVar("M")
 
@@ -69,7 +72,15 @@ class DynamicConfig(Generic[M]):
     lifecycle after that mirrors the Rust crate one for one.
     """
 
-    __slots__ = ("__weakref__", "_cached", "_core", "_executor", "_model", "_schema")
+    __slots__ = (
+        "__weakref__",
+        "_cached",
+        "_core",
+        "_executor",
+        "_model",
+        "_overrides",
+        "_schema",
+    )
 
     def __init__(
         self,
@@ -117,6 +128,12 @@ class DynamicConfig(Generic[M]):
 
         self._model = model
         self._cached: M | None = None
+        # A mirror of the engine's override layer, in the order it was
+        # set. The engine owns the layer and has no way to read it back,
+        # and `overrides()` has to *restore* what it found rather than
+        # empty it — otherwise a nested `with` would drop the outer
+        # block's pin on the way out of the inner one.
+        self._overrides: dict[str, Any] = {}
         # `None` means "whatever `set_executor` says", which in turn
         # means "the loop's own" unless somebody said otherwise.
         self._executor = executor
@@ -149,7 +166,7 @@ class DynamicConfig(Generic[M]):
         # sees the new value when it asks `current()`.
         self._core.on_reload(publish)
 
-        _LIVE_CONFIGS.add(self)
+        _register(_LIVE_CONFIGS, self)
 
     @classmethod
     def from_settings(
@@ -188,8 +205,11 @@ class DynamicConfig(Generic[M]):
         pydantic-settings where the two overlap: files lose to ``.env``,
         which loses to the environment, which loses to overrides.
 
+        ``secrets_dir`` translates too, since the engine grew the source
+        it needed: a directory of single-value files, at the same place
+        in the order pydantic-settings puts it.
+
         What cannot be translated is refused rather than dropped:
-        ``secrets_dir`` (the engine has no directory-of-values source),
         ``cli_parse_args`` (a command line is the program's, not a
         configuration's), and an overridden
         ``settings_customise_sources`` (an order this cannot see, let
@@ -208,7 +228,7 @@ class DynamicConfig(Generic[M]):
         config: Mapping[str, Any] = getattr(model, "model_config", {}) or {}
         refused = [
             name
-            for name in ("secrets_dir", "cli_parse_args")
+            for name in ("cli_parse_args",)
             if config.get(name, _SETTINGS_SOURCING[name]) != _SETTINGS_SOURCING[name]
         ]
 
@@ -234,6 +254,9 @@ class DynamicConfig(Generic[M]):
 
         for path in _as_paths(config.get("env_file")):
             configuration.env_file(path)
+
+        for path in _as_paths(config.get("secrets_dir")):
+            configuration.secrets_dir(path)
 
         # Unconditionally, rather than only when a prefix was declared: an
         # unprefixed settings class still reads the environment — `HOST`,
@@ -298,6 +321,27 @@ class DynamicConfig(Generic[M]):
         self._core.env_file(str(path))
         return self
 
+    def secrets_dir(self, path: str) -> DynamicConfig[M]:
+        """A directory where each file is one key.
+
+        How Docker and Kubernetes hand a container its credentials: the
+        filename is the key, the contents are the value. One directory
+        level, nesting spelled in the filename with the same separator
+        :meth:`nest` sets, and one trailing newline trimmed — every tool
+        that writes a secret to a file writes one and nobody means it as
+        part of the password.
+
+        Sits above the files and below ``.env`` and the environment: a
+        mounted secret is a fact about *this* deployment, so it beats a
+        document a store hands to every deployment alike, and loses to a
+        variable exported for this one run.
+
+        Values arrive as strings, deliberately — a credentials directory
+        is the worst place to guess that ``12345`` was meant as a number.
+        """
+        self._core.secrets_dir(str(path))
+        return self
+
     def profile_env(self, variable: str) -> DynamicConfig[M]:
         """The environment variable naming the active profile."""
         self._core.profile_env(variable)
@@ -311,6 +355,86 @@ class DynamicConfig(Generic[M]):
         """
         self._core.cache(str(path), mode)
         return self
+
+    # ── The remote store ───────────────────────────────────────────────
+
+    def remote(self, source: RemoteSource) -> DynamicConfig[M]:
+        """Reads this configuration's remote store from a Python object.
+
+        ``source`` is a :class:`RemoteSource` — an object with ``fetch()``
+        and ``describe()`` — so a store nobody will write a Rust client
+        for is a class::
+
+            class OurService(RemoteSource):
+                def fetch(self):
+                    return httpx.get(URL, timeout=5).text, Format.JSON
+
+                def describe(self):
+                    return "our service"
+
+            config = DynamicConfig(Database, key="db").remote(OurService())
+
+        Nothing is fetched here — call :meth:`refresh_remote` for that,
+        which is the same explicit split the Rust crate makes: a load
+        merges the document that was last fetched and touches no network.
+        The remote layer sits above the files and below the environment.
+
+        Unlike the source methods, this one is **not** refused after the
+        first load: a store can be installed or swapped whenever, exactly
+        as the Rust ``set_remote`` can. Swapping one drops whatever the
+        previous store had fetched, so a new source never answers with the
+        old one's values.
+
+        ``describe()`` is asked once, here, because the engine reads it on
+        the load path and a load must not re-enter Python.
+        """
+        self._core.remote(source)
+        return self
+
+    def refresh_remote(self) -> None:
+        """Reads the store, and keeps what came back for the next load.
+
+        Raises :class:`RemoteError` if the fetch failed — or
+        :class:`AuthError` if what ``fetch()`` raised was one — with the
+        exception the source raised attached as ``__cause__``. Its
+        *message* is deliberately not repeated in this one: a store's
+        exception routinely carries the URL it called.
+
+        A failed refresh changes nothing: the document from the last
+        successful fetch is still there, the installed model still serves,
+        and a later refresh works. Nothing is poisoned by a store having a
+        bad afternoon.
+
+        Takes effect on the next :meth:`init` or :meth:`reload`.
+        """
+        self._core.refresh_remote()
+
+    async def refresh_remote_async(self) -> None:
+        """:meth:`refresh_remote`, without blocking the event loop.
+
+        The fetch runs on a worker thread, so a ``fetch()`` written with a
+        blocking client — which is most of them — does not stall the loop.
+        Note what this does *not* do: it does not make ``fetch()`` itself
+        awaitable. A source that wants an async client should run its own
+        loop inside ``fetch()``, or fetch on a thread of its own and hand
+        this one what it has.
+        """
+        await asyncio.get_running_loop().run_in_executor(
+            self._pool, self._core.refresh_remote
+        )
+
+    def clear_remote(self) -> None:
+        """Drops the fetched document, so the next load has no remote layer.
+
+        The source stays installed; this drops what was fetched, not where
+        to fetch it from.
+        """
+        self._core.clear_remote()
+
+    @property
+    def remote_description(self) -> str | None:
+        """What the installed store's ``describe()`` said, or ``None``."""
+        return self._core.remote_description
 
     # ── Loading and installing ─────────────────────────────────────────
 
@@ -638,6 +762,7 @@ class DynamicConfig(Generic[M]):
     def set_override(self, path: str, value: Any) -> None:
         """A value that outranks every source — what makes a test authoritative."""
         self._core.set_override(path, value)
+        self._overrides[path] = value
 
     def set_assignments(self, assignments: Sequence[str]) -> None:
         """``key=value`` strings, as a ``--set`` flag would supply them."""
@@ -650,10 +775,57 @@ class DynamicConfig(Generic[M]):
     def clear_overrides(self) -> None:
         """Empties the override layer — what a test does when it is done."""
         self._core.clear_overrides()
+        self._overrides.clear()
 
     def clear_assignments(self) -> None:
         """Empties the flags layer."""
         self._core.clear_assignments()
+
+    @contextmanager
+    def overrides(self, **values: Any) -> Iterator[None]:
+        """Pins values for a block, and puts the previous ones back after it.
+
+        The shape a test wants, because the four-line version has a
+        cleanup step that is easy to forget — and a forgotten
+        `clear_overrides()` leaks into the next test through whatever
+        configuration the module built::
+
+            with config.overrides(pool_size=1, host="localhost"):
+                assert config.current().pool_size == 1
+
+        Reloaded on entry, so the values are live inside the block;
+        reloaded again on the way out, so they are gone after it. The
+        exit restores the override layer as it was *found* rather than
+        emptying it, which is what lets a nested `with` compose: an inner
+        block that pins one more field leaves the outer block's pins
+        standing when it ends.
+
+        A dotted path is spelled with `__`, the same nesting rule the
+        environment layer uses — `pool__max_size=1` means
+        `pool.max_size`. A field whose own name contains `__` cannot be
+        written that way; use `set_override` for it.
+
+        The restore runs on an exception too, which is the point: a
+        failing assertion inside the block must not decide what the next
+        test sees. With no arguments the block pins nothing and still
+        restores, so a test that calls `set_override` itself can wrap
+        that in one.
+        """
+        previous = dict(self._overrides)
+
+        for name, value in values.items():
+            self.set_override(name.replace("__", "."), value)
+
+        try:
+            self.reload()
+            yield
+        finally:
+            self.clear_overrides()
+
+            for path, value in previous.items():
+                self.set_override(path, value)
+
+            self.reload()
 
     def alias(self, old: str, new: str) -> None:
         """Keeps files written before a rename working."""
@@ -718,6 +890,49 @@ class DynamicConfig(Generic[M]):
     def snapshot(self) -> Snapshot:
         """The resolved section, without deserializing it into the model."""
         return Snapshot(self._core.snapshot())
+
+    # ── Telemetry ──────────────────────────────────────────────────────
+
+    def status(self) -> ConfigStatus:
+        """What is true of this configuration right now.
+
+        Which generation is live, how long ago it landed, why, and how
+        the reloads since have gone — a handful of atomic loads and no
+        I/O, so a ``/metrics`` handler may call it per scrape::
+
+            status = config.status()
+            if not status.is_healthy:
+                log.warning("%d reloads have installed nothing",
+                            status.consecutive_failures)
+
+        The *when* fields are elapsed seconds rather than timestamps, and
+        deliberately: the engine records them with a monotonic clock so
+        that NTP stepping a wall clock backwards cannot make a fresh
+        configuration look stale, and a monotonic instant has no epoch to
+        convert from. :mod:`dynamic_config._telemetry` — the class
+        docstrings on :class:`ConfigStatus` and :class:`Failure` — says
+        what to do if a wall-clock time is what you actually need.
+
+        Like the other diagnostics, asking fixes the sources: the numbers
+        live in the engine, and this is what builds one.
+        """
+        return ConfigStatus._of(self._core.status())
+
+    def remote_status(self) -> RemoteStatus:
+        """How the fetches from this configuration's store have gone.
+
+        The other half of the question :meth:`status` answers: *did the
+        store answer*, against *did the document install*. A service
+        watching only the second cannot tell a store that went away from
+        a configuration nobody has changed.
+
+        Always answers, even where no source was ever installed — that
+        case reads as ``fetches == 0`` and ``reachable is None``, which
+        is a source nobody has asked anything of rather than one that is
+        down. Unlike :meth:`status` this touches no engine, so asking
+        does not fix the sources.
+        """
+        return RemoteStatus._of(self._core.remote_status())
 
     def __repr__(self) -> str:
         """Model, key and generation — never the configuration itself."""

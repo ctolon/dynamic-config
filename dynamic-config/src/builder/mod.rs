@@ -57,24 +57,43 @@ use crate::source::{Format, LoadSpec, Source};
 /// a plain `fn` still coerces, so every existing call site is unchanged.
 type Validator<T> = std::sync::Arc<dyn Fn(&T) -> Result<(), Error> + Send + Sync>;
 
-/// Where a successful load goes.
+/// Where a load's outcome goes — the value on success, the news on failure.
 ///
 /// Two known shapes rather than an `Arc<dyn Fn>`: the generated `builder()`
-/// points at a `static` cell through a plain `fn` — no allocation, and the
-/// generated code keeps compiling unchanged — while a
+/// points at a `static` cell through plain `fn`s — no allocation — while a
 /// [`Dynamic`](crate::Dynamic) instance owns its cell and shares it here.
+///
+/// The failure half is here rather than only in the caller because a failed
+/// reload is a fact about the *cell*: `status()` answers "how many have
+/// failed since one worked", and only the cell outlives the attempt. A
+/// generated type reaches its static cell through a `fn` for the same
+/// reason the install does.
 pub(crate) enum Installer<T> {
-    /// The generated path: a `fn` that stores into the type's static cell.
-    Static(fn(T)),
+    /// The generated path: `fn`s that reach the type's static cell.
+    Static {
+        /// Stores into the type's cell, stating why, and hands back what it
+        /// stored — so `init_and_current` returns the snapshot *this* call
+        /// installed rather than whatever a later reload made current.
+        install: fn(T, crate::ReloadReason) -> std::sync::Arc<T>,
+        /// Records a reload that installed nothing.
+        record_failure: fn(&Error),
+    },
     /// The instance path: this builder installs into a shared cell.
     Cell(std::sync::Arc<crate::cell::ConfigCell<T>>),
 }
 
 impl<T> Installer<T> {
-    pub(super) fn install(&self, value: T) {
+    pub(super) fn install(&self, value: T, reason: crate::ReloadReason) -> std::sync::Arc<T> {
         match self {
-            Self::Static(install) => install(value),
-            Self::Cell(cell) => cell.store(value),
+            Self::Static { install, .. } => install(value, reason),
+            Self::Cell(cell) => cell.store_with(value, reason),
+        }
+    }
+
+    pub(super) fn record_failure(&self, error: &Error) {
+        match self {
+            Self::Static { record_failure, .. } => record_failure(error),
+            Self::Cell(cell) => cell.record_failure(error),
         }
     }
 }
@@ -82,7 +101,13 @@ impl<T> Installer<T> {
 impl<T> Clone for Installer<T> {
     fn clone(&self) -> Self {
         match self {
-            Self::Static(install) => Self::Static(*install),
+            Self::Static {
+                install,
+                record_failure,
+            } => Self::Static {
+                install: *install,
+                record_failure: *record_failure,
+            },
             Self::Cell(cell) => Self::Cell(std::sync::Arc::clone(cell)),
         }
     }
@@ -106,6 +131,7 @@ pub struct Builder<T> {
     allow_empty_env: bool,
     strict_env: bool,
     env_files: Vec<String>,
+    secrets_dir: Option<String>,
     profile_env: Option<String>,
     search: Option<(String, Vec<String>)>,
     cache: Option<(String, CacheMode)>,
@@ -142,6 +168,7 @@ impl<T> Clone for Builder<T> {
             allow_empty_env: self.allow_empty_env,
             strict_env: self.strict_env,
             env_files: self.env_files.clone(),
+            secrets_dir: self.secrets_dir.clone(),
             profile_env: self.profile_env.clone(),
             search: self.search.clone(),
             cache: self.cache.clone(),
@@ -178,6 +205,7 @@ impl<T: DeserializeOwned> Builder<T> {
             allow_empty_env: false,
             strict_env: false,
             env_files: Vec::new(),
+            secrets_dir: None,
             profile_env: None,
             search: None,
             cache: None,
@@ -198,11 +226,19 @@ impl<T: DeserializeOwned> Builder<T> {
         }
     }
 
-    /// The generated `builder()`: everything installs into the type's cell.
+    /// The generated `builder()`: everything installs into the type's cell,
+    /// and every reload that installs nothing is recorded there too.
     #[doc(hidden)]
     #[must_use]
-    pub fn with_installer(mut self, install: fn(T)) -> Self {
-        self.install = Some(Installer::Static(install));
+    pub fn with_installer(
+        mut self,
+        install: fn(T, crate::ReloadReason) -> std::sync::Arc<T>,
+        record_failure: fn(&Error),
+    ) -> Self {
+        self.install = Some(Installer::Static {
+            install,
+            record_failure,
+        });
         self
     }
 
@@ -228,6 +264,46 @@ impl<T: DeserializeOwned> Builder<T> {
     pub fn with_secrets(mut self, secrets: &[&str]) -> Self {
         self.secrets = Some(secrets.iter().map(|name| (*name).to_owned()).collect());
         self
+    }
+
+    /// Which paths hold secrets, stated by hand.
+    ///
+    /// `#[config(secret)]` is a *declaration*, and a configuration with no
+    /// struct has nowhere to make one — so a schemaless configuration
+    /// (`Builder::values`, or any bare [`Builder::new`]) starts with no
+    /// secret list at all, and every surface that redacts one has nothing
+    /// to redact. This is that list, supplied at the only place that knows
+    /// it. It buys exactly what the attribute buys:
+    ///
+    /// - [`explain`](Self::explain) returns `***` for a path that is, sits
+    ///   under, or contains one of these — the same three-way rule
+    ///   `#[config(secret)]` gets;
+    /// - [`CacheMode::Redacted`](crate::CacheMode::Redacted) and
+    ///   [`Fingerprint`](crate::CacheMode::Fingerprint) become usable —
+    ///   without a list they are **refused** at `init` rather than quietly
+    ///   writing a cache with the secrets in it.
+    ///
+    /// Paths are dotted and relative to the section, as in
+    /// `"credentials.password"`. Naming a table redacts everything below it.
+    ///
+    /// What it cannot buy is a redacting `Debug`: there is no type here to
+    /// generate one for. [`Value`](crate::Value)'s own `Debug` prints shape
+    /// and keys and never values, which is why that gap is a non-event.
+    ///
+    /// ```no_run
+    /// # #[cfg(feature = "json")] {
+    /// use dynamic_config::{Builder, CacheMode};
+    ///
+    /// let builder = Builder::values("db")
+    ///     .file("config.json")
+    ///     .secrets(&["password"])
+    ///     .cache("last-known-good.json", CacheMode::Redacted);
+    /// # let _ = builder;
+    /// # }
+    /// ```
+    #[must_use]
+    pub fn secrets(self, secrets: &[&str]) -> Self {
+        self.with_secrets(secrets)
     }
 
     /// The generated `builder()`: the type's runtime layers and remote
@@ -329,6 +405,25 @@ impl<T: DeserializeOwned> Builder<T> {
     #[must_use]
     pub fn env_file(mut self, path: impl Into<String>) -> Self {
         self.env_files.push(path.into());
+        self
+    }
+
+    /// A directory of single-value files: one file per key, the filename is
+    /// the key, the contents are the value.
+    ///
+    /// What Docker's `/run/secrets` and a Kubernetes secret volume look like.
+    /// Nesting is spelled in the filename with the same separator
+    /// [`nest`](Self::nest) sets, so `db__password` is `db.password`; one
+    /// trailing newline is removed, because every tool that writes a secret
+    /// writes one. The layer sits above the files and below `.env` and the
+    /// environment — a mounted secret is a deployment fact, and a variable
+    /// exported for this run is a more specific one.
+    ///
+    /// A directory that is not there is skipped, exactly like a missing
+    /// file; one that cannot be read is a load-time error naming it.
+    #[must_use]
+    pub fn secrets_dir(mut self, path: impl Into<String>) -> Self {
+        self.secrets_dir = Some(path.into());
         self
     }
 
@@ -446,6 +541,9 @@ impl<T: DeserializeOwned> Builder<T> {
         if let Some(variable) = &self.profile_env {
             spec = spec.with_profile_env(variable);
         }
+        if let Some(directory) = &self.secrets_dir {
+            spec = spec.with_secrets_dir(directory);
+        }
 
         let search_paths: Vec<&str>;
         if let Some((name, paths)) = &self.search {
@@ -473,6 +571,60 @@ impl<T: DeserializeOwned> Builder<T> {
         }
 
         operation(&spec)
+    }
+}
+
+impl Builder<crate::Value> {
+    /// A configuration with no struct: the resolved section as data.
+    ///
+    /// Sugar for `Builder::<Value>::new(key)`, and the entry point that
+    /// makes the schemaless shape findable — a plugin host, a feature-flag
+    /// table, a tool inspecting somebody else's configuration. Every source,
+    /// layer and diagnostic on this builder behaves exactly as it does for a
+    /// struct, because nothing in the engine ever needed one; what changes is
+    /// the reading, which is by path.
+    ///
+    /// ```
+    /// # #[cfg(feature = "json")] {
+    /// use dynamic_config::{Builder, Dynamic};
+    ///
+    /// # std::fs::create_dir_all("target/doctest").unwrap();
+    /// # std::fs::write("target/doctest/schemaless.json",
+    /// #     r#"{"db": {"host": "localhost", "pool": {"max_size": 32}}}"#).unwrap();
+    /// let config = Dynamic::new(
+    ///     Builder::values("db").file("target/doctest/schemaless.json"),
+    /// );
+    /// let values = config.init_and_current()?;
+    ///
+    /// // One atomic load above; a walk of the tree here. No struct, and no
+    /// // deserialize per read.
+    /// assert_eq!(values.get("host").and_then(|v| v.as_str()), Some("localhost"));
+    /// assert_eq!(values.get("pool.max_size").and_then(|v| v.as_i64()), Some(32));
+    /// # }
+    /// # Ok::<(), dynamic_config::Error>(())
+    /// ```
+    ///
+    /// # What it does not get
+    ///
+    /// A struct is a *declaration*, and four things follow from it that
+    /// nothing can reconstruct without one:
+    ///
+    /// | | With a struct | Here |
+    /// |---|---|---|
+    /// | Types | checked at the load | checked at each read |
+    /// | Unknown keys | [`check`](Self::check) names them | reported as **not checked** |
+    /// | Secrets | `#[config(secret)]` | [`secrets`](Self::secrets), by hand |
+    /// | Missing required values | the load fails | absent is `None` |
+    ///
+    /// Everything else — layering, profiles, discovery, `.env`,
+    /// `secrets_dir`, watching, the last-known-good cache, reload hooks,
+    /// `source_of` and `explain` — is unchanged. The exception is not
+    /// about schemas: remote stores and the runtime layers live in a
+    /// `#[dynamic_config]` type's statics, so no builder made with
+    /// [`new`](Self::new) or `values` reaches them, whatever `T` is.
+    #[must_use]
+    pub fn values(key: impl Into<String>) -> Self {
+        Self::new(key)
     }
 }
 

@@ -29,21 +29,31 @@ if TYPE_CHECKING:
 
         model: type
 
+        # Each body is an explicit `...` rather than the docstring alone:
+        # pyright reads a docstring-only body as a function that falls off
+        # the end returning `None`, and reports four `reportReturnType`
+        # errors a user's Pylance would show them too. mypy does not, which
+        # is exactly why both run in the gate.
         @property
         def kind(self) -> str:
             """What to call this in a message: "Pydantic model", "dataclass"."""
+            ...
 
         def validate(self, data: Any) -> Any:
             """Builds an instance, or raises describing what is wrong."""
+            ...
 
         def field_names(self) -> list[str]:
             """Every key a configuration file may use for a top-level field."""
+            ...
 
         def secret_paths(self) -> list[str]:
             """Every dotted path whose value must not reach a diagnostic."""
+            ...
 
         def is_instance(self, value: Any) -> bool:
             """Whether ``value`` is an instance of this schema."""
+            ...
 
 
 def _unwrap(annotation: Any) -> list[Any]:

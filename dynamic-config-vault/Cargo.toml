@@ -19,6 +19,7 @@ exclude.workspace = true
 
 [dependencies]
 dynamic-config = { workspace = true }
+dynamic-config-store-core = { workspace = true }
 # A blocking HTTP client with no runtime attached, which is the whole reason
 # Vault gets the blocking trait: nothing here needs an executor.
 ureq = { version = "3.0.12", default-features = false, features = ["rustls", "json"] }
@@ -27,6 +28,17 @@ serde_json = "1.0.127"
 [dev-dependencies]
 testcontainers = { version = "0.27", features = ["blocking"] }
 testcontainers-modules = { version = "0.15", features = ["hashicorp_vault"] }
+# A self-signed certificate authority, generated in the test. TLS is the one
+# feature whose tests cannot use a fixture: a certificate expires, and a
+# committed one turns into a suite that fails on a date nobody chose. Dev-only,
+# so it is in no build a user of this crate produces.
+rcgen = "0.14"
+# A TLS *server* for the scripted-server tests, so the private-CA and
+# client-certificate paths are proved by a handshake rather than by inspecting
+# the configuration that was going to be handed to one. Already in the tree
+# under `ureq`; named here so a test can build a server with it. Dev-only.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+
 serde = { version = "1.0.210", features = ["derive"] }
 dynamic-config = { workspace = true, features = ["json"] }
 

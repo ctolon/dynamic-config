@@ -49,6 +49,61 @@ anything has loaded — sources are how a configuration is *identified*.
 | `profile_env(variable)` | The variable naming the active profile, for sibling files |
 | `cache(path, mode="redacted")` | A last-known-good cache; `redacted`, `full` or `fingerprint` |
 
+### A remote store, written in Python
+
+The eight store crates stay in Rust; the *door* does not. Any object with
+`fetch()` and `describe()` is a remote store here — see
+[`RemoteSource`](#remotesource).
+
+The same four methods take a **compiled** store from the opt-in second
+wheel (`pip install dynamic-config-py[remote]`): `Etcd(...)` and
+`Vault(...)` from `dynamic_config.remote` are `RemoteSource`
+implementations like any other, and their API is
+[on its own page](remote-wheel.md#api) because they are a separate
+distribution.
+
+| Synchronous | Async twin | Does |
+|---|---|---|
+| `remote(source)` | — | Installs the store. Chains; fetches nothing. Allowed **after** the first load too, unlike the source methods |
+| `refresh_remote()` | `refresh_remote_async()` | Reads the store and keeps the document, for the next load |
+| `clear_remote()` | — | Drops the fetched document; the source stays installed |
+| `remote_description` | — | What the installed store's `describe()` said, or `None` |
+
+Fetching is explicit, exactly as it is in Rust: a load merges the document
+that was last fetched and touches no network. The remote layer sits above
+the files and below the environment.
+
+```python
+class OurService(RemoteSource):
+    def fetch(self):
+        return httpx.get(URL, timeout=5).text, Format.JSON
+
+    def describe(self):
+        return "our service"
+
+config = DynamicConfig(Database, key="db").remote(OurService())
+config.refresh_remote()
+config.init()
+```
+
+Three things a caller has to know, each of which has a test:
+
+- **The timeout is the `fetch()` implementation's.** Nothing on the Rust
+  side can interrupt Python that has decided not to return, so the
+  deadline belongs to the client the method calls.
+- **A raising `fetch()` is reported, not fatal.** It arrives as
+  `RemoteError` — or `AuthError`, if that is what was raised — with the
+  original attached as `__cause__`. Its *message* is deliberately not
+  repeated: a store's exception routinely carries the URL it called. The
+  previous document and the previous model both keep serving.
+- **A `fetch()` may read its own configuration** — `current()`,
+  `snapshot()`, `explain()` — because no lock is held across it. The one
+  thing it may not do is call `refresh_remote()`, which is refused by
+  name rather than left to recurse.
+
+`describe()` is asked **once**, when the source is installed, because the
+engine reads it on the load path and a load must not re-enter Python.
+
 ### Lifecycle
 
 | Synchronous | Async twin | Does |
@@ -98,12 +153,14 @@ overrides beat everything.
 | `set_defaults(mapping_or_model)` | Every field of a mapping or model, at once |
 | `set_override(path, value)` | Outranks every source — what makes a test authoritative |
 | `set_assignments(["key=value", …])` | `--set`-style strings |
+| `overrides(**values)` | A `with` block that pins those values and restores the previous layer after it — see [Testing](#testing) |
 | `clear_defaults()` / `clear_overrides()` / `clear_assignments()` | Empty one layer |
 | `alias(old, new)` | Keeps files written before a rename working |
 | `bind_env(path, variable)` | Maps one field to one variable by name — `PORT`, `DATABASE_URL` |
 
 These take effect on the next load, so a `set_override` after `init()`
-wants a `reload()` behind it.
+wants a `reload()` behind it. `overrides(...)` is the exception, and that
+is the whole reason it exists: it reloads on entry and again on exit.
 
 ### Diagnostics
 
@@ -122,6 +179,78 @@ wants a `reload()` behind it.
 | `key` | The section key |
 | `model` | The Pydantic class |
 | `generation` | How many models have been installed; zero before the first |
+
+`repr(config)` is those three and nothing else —
+`<DynamicConfig Database key='db' generation=3>` — which is what a
+debugger session wants and what a log line can survive: shape, never
+values, `generation=0` meaning nothing has installed yet.
+
+## Testing
+
+### `overrides(**values)`
+
+The override layer, scoped to a `with` block:
+
+```python
+with config.overrides(pool_size=1, host="localhost"):
+    ...        # reloaded on entry, with those values pinned
+               # the previous overrides are restored and reloaded on exit
+```
+
+The long hand is `set_override`, `reload`, `clear_overrides`, `reload` —
+four lines whose last two are easy to forget, and forgetting them leaks
+into the next test through whatever configuration the module built.
+
+- **Restores rather than clears.** The exit puts back the layer the block
+  *found*, so a nested `with` composes and an override set before the
+  block still stands after it.
+- **Restores on an exception too.** A failing assertion inside the block
+  does not decide what the next test sees.
+- **`__` is a dot**, the same nesting rule the environment layer uses:
+  `pool__max_size=1` means `pool.max_size`. A field whose own name
+  contains `__` cannot be spelled this way — use `set_override`.
+- **With no arguments** it pins nothing and still restores, which wraps a
+  block that calls `set_override` itself.
+
+### The pytest plugin
+
+The package ships one, and pytest finds it through a `pytest11` entry
+point — installing `dynamic-config-py` is the whole setup:
+
+```python
+def test_the_service_reads_its_file(dynamic_config_workspace):
+    (dynamic_config_workspace / "app.toml").write_text('[db]\nport = 5432\n')
+    config = DynamicConfig(Database, key="db").file("app.toml")
+
+    assert config.init_and_current().port == 5432
+```
+
+| Fixture | Is |
+|---|---|
+| `dynamic_config_workspace` | A `tmp_path` that is also the working directory, so `file("app.toml")` finds *this* test's copy |
+| `dynamic_config_env` | A factory: `dynamic_config_env("APP_")` unsets every variable with that prefix for the test |
+
+Nothing is autouse — a plugin that arrives with the wheel should not
+change what a test sees until the test asks. The environment one is
+usually wanted for every test, which is one fixture in your own
+`conftest.py`:
+
+```python
+@pytest.fixture(autouse=True)
+def _clean_environment(dynamic_config_env):
+    dynamic_config_env("APP_")
+```
+
+A suite that turns entry-point discovery off — CI images increasingly set
+`PYTEST_DISABLE_PLUGIN_AUTOLOAD` — asks for it by name instead:
+`-p dynamic_config.pytest`, on the command line or in `addopts`.
+
+`dynamic_config.pytest` imports pytest and the standard library and
+nothing else — not Pydantic, and not the rest of this package's public
+surface. It is auto-loaded in every pytest run of every environment the
+package is installed in, so a dependency there would be a dependency for
+all of them; the binding's own suite runs on these two fixtures, and a
+subprocess test imports the module with Pydantic made unimportable.
 
 ## Module functions
 
@@ -171,6 +300,14 @@ It attaches `config`, `current`, `try_current`, `reload`, `source_of` and
 `explain` to the class, and refuses a model that declares a field with
 one of those names.
 
+### `Configured`
+
+The mixin that makes those six visible to a type checker and to an
+editor — `class Database(Configured, BaseModel)`. Runtime behaviour is
+unchanged; what changes is that `Database.current()` is typed as
+`Database` rather than being an `attr-defined` error. See
+[the decorator](../python.md#the-decorator).
+
 ## Types
 
 ### `Origin`
@@ -201,6 +338,26 @@ values.
 
 `path` and `kind` (`added`, `removed`, `changed`).
 
+### `RemoteSource`
+
+The ABC a store written in Python subclasses. Two abstract methods, so a
+class missing one cannot be instantiated at all — a `TypeError` where the
+store is constructed, rather than something a deployment discovers at its
+first refresh:
+
+| Method | Answers |
+|---|---|
+| `fetch()` | `(document, format)` — the text, and the [`Format`](#format) it is written in. Raise to report a failure |
+| `describe()` | The store's name, for provenance and error messages. Asked once, at install |
+
+Name the store, never the credential that reaches it: `describe()` is
+what `source_of(...)` reports and what every remote error carries.
+
+### `Format`
+
+`Format.JSON`, `Format.TOML`, `Format.YAML` — a `str` enum, so a plain
+`"json"` is accepted too.
+
 ### `Watch`
 
 `running`, `stop()`, `detach()`, and a context manager that stops on
@@ -225,7 +382,8 @@ instance carries `kind`, `path`, `origin_kind` and `origin`.
 | `TypeMismatchError` | A value cannot become the requested type |
 | `EnvError` | An environment variable could not be interpreted |
 | `InvalidError` | The configuration as a whole was rejected — Pydantic's report is on `.errors`, scrubbed of input values |
-| `RemoteError` | A remote store could not be read |
+| `RemoteError` | A remote store could not be read — unreachable, refusing, malformed |
+| `AuthError` | A credential was rejected, or could not be obtained. Distinct from `RemoteError` on purpose: waiting fixes one and not the other |
 | `DecryptError` | An encrypted source could not be decrypted |
 | `BackendError` | The engine refused — a source added after loading, for instance |
 | `NotInitialisedError` | `current()` before the first successful load |

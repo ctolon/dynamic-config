@@ -1,8 +1,15 @@
 # Releasing
 
-Twelve crates. Ten publish to crates.io in three waves, versioned
-together; the Python wheels follow in a fourth, on a version of their
+Sixteen crates. Fourteen publish to crates.io in four waves, versioned
+together; the Python wheels follow in a fifth, on a version of their
 own.
+
+The waves are dependency order: the macro and the `no_std` crate, then
+the engine, then `dynamic-config-store-core` — which every store crate
+depends on — then the stores, the server and the CLI. A crate cannot be
+`publish = false` and be depended on by a published one: cargo resolves a
+path dependency of a published crate from the registry, so packaging
+fails before the release does.
 
 **`dynamic-config-python` versions independently.** It is excluded from
 `cargo release` (`[package.metadata.release] release = false`) and

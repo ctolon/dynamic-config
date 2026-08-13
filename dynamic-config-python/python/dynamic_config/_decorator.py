@@ -3,18 +3,85 @@
 For code that would rather import a class than be handed an object. It
 attaches a `DynamicConfig` and the handful of methods that read through
 it, and refuses a model that declares a field by one of those names.
+
+**Inherit `Configured` if you type-check.** Attributes attached at
+runtime are invisible to a type checker — Python has no way to say "this
+class, plus these six members" — so `Database.current()` on a class that
+only carries the decorator is an `attr-defined` error under mypy and
+nothing at all to an editor's completion. `Configured` declares the six
+where a checker can see them, and the decorator fills them in:
+
+    @dynamic_config(key="db", files=["config.toml"])
+    class Database(Configured, BaseModel):
+        host: str = "localhost"
+
+    Database.current().host        # typed as `str`, completes in an editor
+
+The decorator alone still works, unchanged, for code that does not
+type-check — but it cannot be made visible to one, and pretending
+otherwise would be worse than saying it.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Callable, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, ClassVar, Optional, TypeVar, cast
 
 from ._config import DynamicConfig
 from ._core import DynamicConfigError
+from ._diagnostics import Explanation, Origin
 from ._schema import field_names
 
+if TYPE_CHECKING:
+    # 3.11 has it in `typing`; every type checker resolves it from
+    # `typing_extensions` on older ones, and this import never runs.
+    from typing_extensions import Self
+
 M = TypeVar("M")
+
+
+class Configured:
+    """What `@dynamic_config` attaches, declared so a checker can see it.
+
+    A mixin with no runtime behaviour of its own beyond delegating to
+    `config`, which the decorator sets. Inheriting it is what makes
+    `Database.current()` type-check and complete in an editor; the
+    methods below are the same ones the decorator would otherwise attach
+    at runtime.
+
+    It declares no fields, so a Pydantic model gains nothing but the
+    methods — `model_fields` is untouched.
+    """
+
+    #: The configuration the decorator built. Set at decoration; reading
+    #: it before then is an `AttributeError` that names this class.
+    config: ClassVar[DynamicConfig[Any]]
+
+    @classmethod
+    def current(cls) -> Self:
+        """The installed model. Raises before the first successful load."""
+        return cast("Self", cls.config.current())
+
+    @classmethod
+    def try_current(cls) -> Optional[Self]:
+        """The installed model, or ``None`` before the first load."""
+        return cast("Optional[Self]", cls.config.try_current())
+
+    @classmethod
+    def reload(cls) -> None:
+        """One reload: load, validate, install, rewrite the cache."""
+        cls.config.reload()
+
+    @classmethod
+    def source_of(cls, path: str) -> Optional[Origin]:
+        """Which layer would supply ``path``, or ``None``."""
+        return cls.config.source_of(path)
+
+    @classmethod
+    def explain(cls, path: str) -> Explanation:
+        """Every layer's answer for ``path``, secrets redacted."""
+        return cls.config.explain(path)
+
 
 #: What the decorator puts on the class. A model declaring a field by one
 #: of these names would have it shadowed, so that is refused rather than
@@ -105,15 +172,21 @@ def dynamic_config(
             config.cache(cache, cache_mode)
 
         model.config = config  # type: ignore[attr-defined]
-        model.current = classmethod(lambda _cls: config.current())  # type: ignore[attr-defined]
-        model.try_current = classmethod(lambda _cls: config.try_current())  # type: ignore[attr-defined]
-        model.reload = classmethod(lambda _cls: config.reload())  # type: ignore[attr-defined]
-        model.source_of = classmethod(  # type: ignore[attr-defined]
-            lambda _cls, path: config.source_of(path)
-        )
-        model.explain = classmethod(  # type: ignore[attr-defined]
-            lambda _cls, path: config.explain(path)
-        )
+
+        # A class that inherits `Configured` already has the five readers,
+        # typed, and they delegate through `config` — which was just set.
+        # Attaching them again would shadow the typed ones with untyped
+        # lambdas, which is the opposite of the point.
+        if not issubclass(model, Configured):
+            model.current = classmethod(lambda _cls: config.current())  # type: ignore[attr-defined]
+            model.try_current = classmethod(lambda _cls: config.try_current())  # type: ignore[attr-defined]
+            model.reload = classmethod(lambda _cls: config.reload())  # type: ignore[attr-defined]
+            model.source_of = classmethod(  # type: ignore[attr-defined]
+                lambda _cls, path: config.source_of(path)
+            )
+            model.explain = classmethod(  # type: ignore[attr-defined]
+                lambda _cls, path: config.explain(path)
+            )
 
         if init:
             config.init()

@@ -3,6 +3,7 @@ members = [
     "dynamic-config",
     "dynamic-config-macros",
     "dynamic-config-cli",
+    "dynamic-config-store-core",
     "dynamic-config-vault",
     "dynamic-config-consul",
     "dynamic-config-etcd",
@@ -11,7 +12,10 @@ members = [
     "dynamic-config-redis",
     "dynamic-config-s3",
     "dynamic-config-firestore",
+    "dynamic-config-git",
+    "dynamic-config-server",
     "dynamic-config-python",
+    "dynamic-config-python-remote",
 ]
 resolver = "2"
 
@@ -37,6 +41,10 @@ exclude = [
 [workspace.dependencies]
 dynamic-config-macros = { version = "=0.5.0", path = "dynamic-config-macros" }
 dynamic-config = { version = "=0.5.0", path = "dynamic-config", default-features = false }
+# The store crates' shared internals. Published because cargo will not let a
+# published crate depend on one that is not — not because anything outside
+# this workspace should name it.
+dynamic-config-store-core = { version = "=0.5.0", path = "dynamic-config-store-core" }
 
 # One profile for the benchmark to be worth reading.
 [profile.bench]

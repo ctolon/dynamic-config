@@ -33,13 +33,24 @@ lives next door, one concern per file:
     _executor.py      which pool pays for the blocking half
     _lifetime.py      `Watch`, `HookGuard`, and the shutdown sweep
     _pydantic.py      a Pydantic model as a schema — imported only if used
+    _remote.py        `RemoteSource` and `Format`, for a store in Python
     _schema.py        which adapter a class gets, and the questions both answer
     _settings.py      the pydantic-settings bridge
+    _telemetry.py     `status()`, and the Prometheus exposition
     _core.pyi         stubs for the compiled half
 
 Import from the package, not from those: a leading underscore is a
 promise that the file may be reorganised, and this list is the only
 thing that will not move.
+
+Two neighbours have no underscore, because neither is imported from here at
+all. `dynamic_config.pytest` is the pytest plugin, which pytest loads
+through the package's `pytest11` entry point; it imports pytest and the
+standard library and nothing else — including nothing from this module.
+`dynamic_config.remote` is the door to the Rust remote stores, which are a
+second wheel (`pip install dynamic-config-py[remote]`); importing it without
+that wheel raises an ImportError naming the extra, and importing *this*
+module never touches it.
 """
 
 from __future__ import annotations
@@ -47,6 +58,7 @@ from __future__ import annotations
 from . import _core
 from ._config import DynamicConfig
 from ._core import (
+    AuthError,
     BackendError,
     DecryptError,
     DynamicConfigError,
@@ -58,7 +70,7 @@ from ._core import (
     RemoteError,
     TypeMismatchError,
 )
-from ._decorator import dynamic_config
+from ._decorator import Configured, dynamic_config
 from ._diagnostics import (
     Change,
     Contribution,
@@ -73,7 +85,9 @@ from ._diagnostics import (
 from ._errors import NotInitialisedError
 from ._executor import set_executor
 from ._lifetime import HookGuard, Watch
+from ._remote import Format, RemoteSource
 from ._schema import secret_paths
+from ._telemetry import ConfigStatus, Exposition, Failure, RemoteStatus
 
 #: This package's version. It moves on its own schedule — see the
 #: versioning note in the book: the wheel embeds the engine rather than
@@ -85,14 +99,20 @@ __version__: str = _core.__version__
 __engine_version__: str = _core.__engine_version__
 
 __all__ = [
+    "AuthError",
     "BackendError",
     "Change",
+    "ConfigStatus",
+    "Configured",
     "Contribution",
     "DecryptError",
     "DynamicConfig",
     "DynamicConfigError",
     "EnvError",
     "Explanation",
+    "Exposition",
+    "Failure",
+    "Format",
     "HookGuard",
     "InvalidError",
     "IoError",
@@ -101,6 +121,8 @@ __all__ = [
     "Origin",
     "ParseError",
     "RemoteError",
+    "RemoteSource",
+    "RemoteStatus",
     "Report",
     "Resolved",
     "Snapshot",

@@ -179,12 +179,18 @@ let candidate: AppConfig = AppConfig::builder("app").file("config.toml").load()?
 
 AppConfig::builder("app").file("config.toml").init()?;
 let config = AppConfig::current();      // one atomic load, any thread
+
+// The same two lines, for the one place they always pair: startup.
+let config = AppConfig::builder("app").file("config.toml").init_and_current()?;
 ```
 
 `load()` is a pure read — deserialize and hand over, the snapshot
 untouched; use it to inspect a configuration without publishing it.
 `init()` loads *and installs*, and remembers the builder so the type can
-answer questions later. `current()` is an atomic pointer load, cheap
+answer questions later. `init_and_current()` is `init()` with the
+installed snapshot still in hand — the same install, so a reload landing
+immediately afterwards moves `current()` and leaves what it returned
+alone. `current()` is an atomic pointer load, cheap
 enough per request — but call it once per request and reuse the `Arc`, or
 a reload landing mid-request shows one request two configurations.
 `try_current()` returns `None` instead of panicking;

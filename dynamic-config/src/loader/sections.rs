@@ -231,12 +231,7 @@ pub(super) fn validated_profile(spec: &LoadSpec<'_>) -> Result<Option<String>, E
         return Ok(None);
     };
 
-    let clean = !profile.contains('/')
-        && !profile.contains('\\')
-        && !profile.contains("..")
-        && !profile.contains('\0');
-
-    if clean {
+    if profile_is_safe(&profile) {
         return Ok(Some(profile));
     }
 
@@ -250,28 +245,55 @@ pub(super) fn validated_profile(spec: &LoadSpec<'_>) -> Result<Option<String>, E
     ))
 }
 
+/// Whether a profile can only ever name a sibling of the file it is applied to.
+///
+/// Split out of [`validated_profile`] so the rule can be checked against
+/// [`profile_variant`] directly — the two together are the whole of the 0.4
+/// traversal fix, and a fuzzer reaches them through
+/// [`__fuzz`](crate::__fuzz).
+pub(crate) fn profile_is_safe(profile: &str) -> bool {
+    !profile.contains('/')
+        && !profile.contains('\\')
+        && !profile.contains("..")
+        && !profile.contains('\0')
+}
+
 /// `config.toml` + `production` → `config.production.toml`.
-fn profile_variant(path: &Path, profile: &str) -> Option<PathBuf> {
+///
+/// The directory is never touched. Everything below works on the *file name*
+/// and the result is rejoined to the original path exactly once, which is
+/// what makes the sibling rule structural rather than something each branch
+/// has to remember — see [`name_variant`].
+pub(crate) fn profile_variant(path: &Path, profile: &str) -> Option<PathBuf> {
+    let name = path.file_name()?.to_str()?;
+
+    Some(path.with_file_name(name_variant(name, profile)?))
+}
+
+/// The naming half of [`profile_variant`], on a file name alone.
+///
+/// It takes a `&str` rather than a `&Path` on purpose. Reasoning about a
+/// whole path here is what broke the sibling rule once already: stripping
+/// `.age` off `dir.d/..age` leaves `dir.d/.`, whose *file name* is `dir.d` —
+/// so a recursion on the path renamed the **directory** and the variant
+/// landed one level up, in a directory the caller never named. A fuzz target
+/// found it (`fuzz/fuzz_targets/sections.rs`); a name cannot express a
+/// directory, so the shape that produced it is gone rather than guarded.
+fn name_variant(name: &str, profile: &str) -> Option<String> {
     // An encrypted file's real extension is `.age`, so the profile goes under
     // it: `secrets.json.age` becomes `secrets.production.json.age`, not
     // `secrets.json.production.age`, which is what naming the suffix would give.
-    if let Some((inner, _)) = path
-        .to_str()
-        .and_then(|path| crate::source::inner_name(path))
-    {
-        let variant = profile_variant(Path::new(inner), profile)?;
+    if let Some((inner, _)) = crate::source::inner_name(name) {
+        let inner = name_variant(inner, profile)?;
 
-        return Some(PathBuf::from(format!(
-            "{}.{}",
-            variant.display(),
-            crate::source::ENCRYPTED_SUFFIX
-        )));
+        return Some(format!("{inner}.{}", crate::source::ENCRYPTED_SUFFIX));
     }
 
-    let stem = path.file_stem()?.to_str()?;
-    let extension = path.extension()?.to_str()?;
+    let name = Path::new(name);
+    let stem = name.file_stem()?.to_str()?;
+    let extension = name.extension()?.to_str()?;
 
-    Some(path.with_file_name(format!("{stem}.{profile}.{extension}")))
+    Some(format!("{stem}.{profile}.{extension}"))
 }
 
 pub(super) fn merge_file(figment: Figment, path: &Path, format: Format) -> Result<Figment, Error> {
@@ -406,6 +428,49 @@ pub(super) fn merge_named_text(
     }
 }
 
+/// One document, parsed into its tree, with no section mapping applied.
+///
+/// The other direction from [`crate::write`]'s `render`, and the half of the
+/// parse seam that [`Value::parse`](crate::Value::parse) is: a caller outside
+/// this crate that wants to *merge* documents before the loader sees them
+/// needs the tree, not the profiles the loader files it under. The `Sections`
+/// wrapper is deliberately absent — it turns top-level keys into profiles, and
+/// a merge of several documents happens below that line.
+///
+/// Errors travel through [`origin::translate`](super::origin::translate) like
+/// every other figment failure here, so the offending value is stripped on this
+/// road too.
+pub(crate) fn parse_document(text: &str, format: Format) -> Result<Dict, Error> {
+    #[cfg(not(any(feature = "json", feature = "toml", feature = "yaml")))]
+    let _ = text;
+
+    // `Provider::data`, not `Figment::extract`: a figment would re-merge and
+    // re-tag what has just been parsed, for a tree that is thrown away again
+    // as soon as it becomes a `crate::Value`. A string provider that was never
+    // `nested()` files the whole document under the default profile, so there
+    // is exactly one entry to take.
+    #[cfg(any(feature = "json", feature = "toml", feature = "yaml"))]
+    fn document<P: figment::Provider>(provider: P) -> Result<Dict, Error> {
+        Ok(provider
+            .data()
+            .map_err(|error| super::origin::translate(&error))?
+            .remove(&figment::Profile::Default)
+            .unwrap_or_default())
+    }
+
+    match format {
+        #[cfg(feature = "json")]
+        Format::Json => document(Json::string(text)),
+        #[cfg(feature = "toml")]
+        Format::Toml => document(Toml::string(text)),
+        #[cfg(feature = "yaml")]
+        Format::Yaml => document(Yaml::string(text)),
+
+        #[allow(unreachable_patterns)]
+        format => Err(disabled(format)),
+    }
+}
+
 /// Unreachable through `#[dynamic_config]`, which turns a disabled format into a
 /// compile error naming the feature. Reachable by hand, so it says the same
 /// thing at runtime.
@@ -440,5 +505,42 @@ mod tests {
     #[test]
     fn a_path_without_an_extension_has_no_variant() {
         assert_eq!(profile_variant(Path::new("config"), "production"), None);
+    }
+
+    #[test]
+    fn an_encrypted_file_carries_the_profile_under_its_suffix() {
+        assert_eq!(
+            profile_variant(Path::new("/etc/app/secrets.json.age"), "production"),
+            Some(PathBuf::from("/etc/app/secrets.production.json.age"))
+        );
+    }
+
+    /// A directory with a dot in its name is ordinary — `/etc/my.app`,
+    /// `/srv/conf.d` — and a file called `..age` inside one used to walk the
+    /// variant *out* of that directory: `/etc/my.app/..age` produced
+    /// `/etc/my.production.app.age`, one level up, which is exactly the
+    /// traversal the profile rule exists to prevent. Found by
+    /// `fuzz/fuzz_targets/sections.rs`.
+    #[test]
+    fn a_variant_never_leaves_the_directory_it_was_built_from() {
+        for base in [
+            "/etc/my.app/..age",
+            "/srv/conf.d/..age",
+            "/etc/my.app/config.toml",
+            "relative.d/..age",
+        ] {
+            let base = Path::new(base);
+            let Some(variant) = profile_variant(base, "production") else {
+                continue;
+            };
+
+            assert_eq!(
+                variant.parent(),
+                base.parent(),
+                "{} moved to {}",
+                base.display(),
+                variant.display()
+            );
+        }
     }
 }

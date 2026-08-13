@@ -188,9 +188,15 @@ impl<'a> Source<'a> {
     /// pass through untouched — for a provider author they are figment's own
     /// vocabulary, deliberately reachable through this one door.
     ///
-    /// **Provenance.** `source_of` and every error report the provider's own
-    /// metadata name. A provider that describes itself badly produces a
-    /// diagnostic that describes it badly.
+    /// **Provenance comes from the metadata's *source*, not its name.**
+    /// `Metadata::named("INI file")` alone leaves every value it supplies
+    /// answering [`Origin::Unknown`](crate::Origin::Unknown): the name
+    /// reaches error messages, but
+    /// [`source_of`](crate::source_of) reads the source. Set both —
+    /// `Metadata::from("INI file", path)` — and a value traces back to the
+    /// file that holds it, exactly as one from `.file(..)` does. A provider
+    /// that describes itself badly produces a diagnostic that describes it
+    /// badly; one that describes itself not at all produces none.
     ///
     /// The `Send + Sync` bound is not decoration: a `LoadSpec` is moved to
     /// another thread by `load_async` and by the file watcher, so a provider
@@ -345,6 +351,14 @@ pub struct LoadSpec<'a> {
     /// A document fetched from a remote store: above the files, below the
     /// environment.
     pub remote: Option<&'a crate::Remote>,
+    /// A directory of single-value files — one file per key, the filename is
+    /// the key, the contents are the value.
+    ///
+    /// How Docker and Kubernetes mount secrets. Nesting is spelled in the
+    /// filename with [`nest`](Self::nest), so one setting governs this layer
+    /// and the environment alike; a directory that is not there is skipped
+    /// like a missing file.
+    pub secrets_dir: Option<&'a str>,
     /// `.env` files, read as the environment layer rather than as documents.
     ///
     /// Merged in order, just *below* the real environment: a variable somebody
@@ -388,6 +402,7 @@ impl std::fmt::Debug for LoadSpec<'_> {
             .field("env_prefix", &self.env_prefix)
             .field("defaults", &self.defaults.is_some())
             .field("remote", &self.remote.is_some())
+            .field("secrets_dir", &self.secrets_dir)
             .field("flags", &self.flags.is_some())
             .field("overrides", &self.overrides.is_some())
             .field("nest", &self.nest)
@@ -409,6 +424,7 @@ impl<'a> LoadSpec<'a> {
             env_prefix: None,
             defaults: None,
             remote: None,
+            secrets_dir: None,
             env_files: &[],
             aliases: None,
             env_bindings: None,
@@ -476,6 +492,20 @@ impl<'a> LoadSpec<'a> {
     #[must_use]
     pub const fn with_remote(mut self, remote: &'a crate::Remote) -> Self {
         self.remote = Some(remote);
+        self
+    }
+
+    /// A directory of single-value files, layered just below the `.env` files
+    /// and the environment.
+    ///
+    /// One directory level: every regular file in it is one key, named by the
+    /// file and valued by its contents with a single trailing newline
+    /// removed. Subdirectories are not descended into — nesting is spelled in
+    /// the filename with [`with_nest`](Self::with_nest), which is what a
+    /// Kubernetes mount produces anyway.
+    #[must_use]
+    pub const fn with_secrets_dir(mut self, path: &'a str) -> Self {
+        self.secrets_dir = Some(path);
         self
     }
 

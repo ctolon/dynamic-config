@@ -66,3 +66,10 @@ ENV/
 coverage.xml
 htmlcov/
 .benchmarks/
+
+# Implementation notes for the next wave: working documents, written to be
+# read while building and thrown away after. Deliberately untracked — the
+# decisions that survive belong in ROADMAP.md, the book or a changelog,
+# and a design doc that outlives its implementation is a second source of
+# truth nobody updates.
+/docs/implementation/

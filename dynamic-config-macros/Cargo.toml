@@ -18,6 +18,13 @@ exclude.workspace = true
 proc-macro = true
 
 [dependencies]
+# Resolves the facade crate's real name from the *consumer's* manifest, so a
+# renamed dependency still gets an expansion it can compile. It pulls
+# `toml_edit`, which has historically moved its MSRV faster than this floor —
+# measured against real 1.71/1.74 toolchains before it was added rather than
+# read off a manifest, and the resolution this workspace's MSRV fallback picks
+# (3.4 over `toml_edit` 0.23) builds on 1.71.
+proc-macro-crate = "3.4"
 proc-macro2 = "1.0.91"
 # 1.0.37 rather than the 1.0.35 this crate itself needs: `pyo3-macros-backend`
 # requires it, and `just minimal-versions` pins every *direct* requirement to

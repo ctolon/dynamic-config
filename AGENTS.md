@@ -14,24 +14,35 @@ being cut (`scripts/sync-readme-versions.sh`), and `doc_surface.rs`'s
 behind anyway. The book never carries the number at all —
 its snippets say `<version>`.
 
-Twelve crates in one workspace, one version, published together — ten to
-crates.io, one to PyPI, one to neither:
+Sixteen crates in one workspace, one version, published together —
+fourteen to crates.io, two to PyPI:
 
 ```text
 dynamic-config-macros      the proc macro; no stable API of its own
 dynamic-config             everything with behaviour — loading, layers, storage, watching
+dynamic-config-store-core  what the store crates share: the credential cache,
+                           URL redaction, the watch panic net. No stable API
 dynamic-config-etcd        \
 dynamic-config-consul       |
 dynamic-config-nats         |  one remote store each, behind a `RemoteSource`
 dynamic-config-redis        |  or `AsyncRemoteSource` implementation
 dynamic-config-vault        |
 dynamic-config-s3           |
-dynamic-config-firestore   /
+dynamic-config-firestore    |
+dynamic-config-git         /   (git: shallow single-ref fetch, any host)
 dynamic-config-embedded    a separate `no_std` crate, sharing no code
+dynamic-config-server      serves configuration over HTTP; a security boundary,
+                           so it starts from a threat model rather than a router
 dynamic-config-cli         the `explain`/`diff` binary
 dynamic-config-python      a PyO3 extension; ships to PyPI, never to crates.io
                            (no dependencies — Pydantic is an extra)
+dynamic-config-python-remote  the stores for Python, a second wheel behind an
+                           extra: a wheel is built per platform, so seven
+                           clients cannot ride in the install that reads a file
 ```
+
+`fuzz/` is its own workspace, so its lockfile and its nightly requirement
+touch none of the above.
 
 Read [README.md](README.md) before changing anything: it is the specification,
 not a summary. [Not planned](book/src/limitations.md#not-planned) lists what is deliberately
@@ -76,9 +87,12 @@ unavailable, say so rather than skipping `just containers` silently.
 
 ## Rules that are not negotiable
 
-**Reading configuration is lock-free.** `current()` is an atomic load. Anything
-that puts a mutex, an allocation or a parse on that path is wrong regardless of
-how convenient it is.
+**Reading configuration is lock-free and allocation-free.** `current()`
+acquires an `arc-swap` guard: **85 instructions** and zero allocations,
+measured by `benches/instructions.rs` and `benches/alloc_profile.rs` rather
+than asserted. Anything that puts a mutex, an allocation or a parse on that
+path is wrong regardless of how convenient it is — and "an atomic load" is
+the shape of the claim, not its cost.
 
 **Secrets are paths and types, never values.** Diffs, `check()` reports,
 unknown-key suggestions and *error messages* all report which key moved and what

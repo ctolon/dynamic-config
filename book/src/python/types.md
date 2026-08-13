@@ -227,6 +227,7 @@ declaration as engine sources:
 | `toml_file`, `json_file`, `yaml_file` | `file(...)`, in that order |
 | `env_file` | `env_file(...)` — the dotenv layer |
 | `env_prefix` | one `bind_env` per leaf field, so `APP_PORT` stays `APP_PORT` rather than becoming `APP_<KEY>_PORT` |
+| `secrets_dir` | `secrets_dir(...)` — a directory of single-value files |
 | `env_nested_delimiter` | the separator inside those names |
 | `case_sensitive` | whether they are upper-cased |
 
@@ -236,8 +237,11 @@ loses to overrides. Bindings see `.env` files too, so a variable a
 deployment writes into `.env` rather than exporting still reaches the
 field it names.
 
+`secrets_dir` translates too, onto the engine source of the same shape —
+a directory where each file is one key.
+
 What has no engine equivalent is **refused at the call** rather than
-dropped: `secrets_dir`, `cli_parse_args`, and an overridden
+dropped: `cli_parse_args`, and an overridden
 `settings_customise_sources`. Declare those on the configuration
 instead — or keep the class for its schema and use `DynamicConfig`
 directly, which is a fine thing to want:

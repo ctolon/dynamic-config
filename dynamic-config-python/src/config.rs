@@ -32,6 +32,7 @@ use serde_json::Value;
 
 use crate::convert;
 use crate::errors;
+use crate::remote::{PyRemoteSource, PySource};
 
 /// What the validation closure needs — and nothing that points back at
 /// the configuration, so the closure the watcher thread holds can never
@@ -75,20 +76,23 @@ struct Layers {
     flags: &'static Layer,
     bindings: &'static EnvBindings,
     aliases: &'static Aliases,
+    /// The remote slot. Kept here rather than only handed to the builder,
+    /// because `refresh_remote()` reaches it directly — a refresh is a
+    /// fetch into this slot and nothing else, exactly as the generated
+    /// Rust `refresh_remote()` is.
+    remote: &'static Remote,
 }
 
 impl Layers {
-    fn leak() -> (Self, &'static Remote) {
-        (
-            Self {
-                defaults: Box::leak(Box::new(Layer::new())),
-                overrides: Box::leak(Box::new(Layer::new())),
-                flags: Box::leak(Box::new(Layer::new())),
-                bindings: Box::leak(Box::new(EnvBindings::new())),
-                aliases: Box::leak(Box::new(Aliases::new())),
-            },
-            Box::leak(Box::new(Remote::new())),
-        )
+    fn leak() -> Self {
+        Self {
+            defaults: Box::leak(Box::new(Layer::new())),
+            overrides: Box::leak(Box::new(Layer::new())),
+            flags: Box::leak(Box::new(Layer::new())),
+            bindings: Box::leak(Box::new(EnvBindings::new())),
+            aliases: Box::leak(Box::new(Aliases::new())),
+            remote: Box::leak(Box::new(Remote::new())),
+        }
     }
 }
 
@@ -138,6 +142,12 @@ struct Inner {
     hooks: Mutex<Vec<(u64, Py<PyAny>)>>,
     next_hook: AtomicU64,
     layers: Layers,
+    /// The Python object a remote fetch calls, if one was installed.
+    ///
+    /// Held here rather than inside the shim the engine owns: that shim
+    /// lives in a leaked `&'static Remote`, so anything Python it held
+    /// would never be freed. See `remote::PySource`.
+    source: Arc<PySource>,
 }
 
 impl Inner {
@@ -531,7 +541,7 @@ impl Config {
             reports: Mutex::new(None),
         });
 
-        let (layers, remote) = Layers::leak();
+        let layers = Layers::leak();
 
         // `with_fields` wants names that outlive the load; the model's
         // field list is fixed at class-definition time, so one leak per
@@ -556,7 +566,7 @@ impl Config {
                 layers.flags,
                 layers.bindings,
                 layers.aliases,
-                remote,
+                layers.remote,
                 // An instance has no type-level slot to remember it in.
                 |_| {},
             )
@@ -578,6 +588,7 @@ impl Config {
                 hooks: Mutex::new(Vec::new()),
                 next_hook: AtomicU64::new(1),
                 layers,
+                source: Arc::new(PySource::default()),
             }),
         })
     }
@@ -625,6 +636,11 @@ impl Config {
         self.inner.configure(py, |builder| builder.env_file(path))
     }
 
+    fn secrets_dir(&self, py: Python<'_>, path: String) -> PyResult<()> {
+        self.inner
+            .configure(py, |builder| builder.secrets_dir(path))
+    }
+
     fn profile_env(&self, py: Python<'_>, variable: String) -> PyResult<()> {
         self.inner
             .configure(py, |builder| builder.profile_env(variable))
@@ -645,6 +661,88 @@ impl Config {
 
         self.inner
             .configure(py, move |builder| builder.cache(path, mode))
+    }
+
+    // ── The remote store ───────────────────────────────────────────────
+
+    /// Installs a Python object as this configuration's remote store.
+    ///
+    /// Not a builder call, deliberately: the engine's `set_remote` is on
+    /// the remote slot rather than the builder, so a store can be
+    /// installed or swapped after the first load, exactly as it can in
+    /// Rust. Nothing is fetched here.
+    fn remote(&self, py: Python<'_>, source: Py<PyAny>) -> PyResult<()> {
+        let bound = source.bind(py);
+
+        for name in ["fetch", "describe"] {
+            if !bound.hasattr(name)? {
+                return Err(pyo3::exceptions::PyTypeError::new_err(format!(
+                    "a remote source needs a {name}() method; subclass \
+                     dynamic_config.RemoteSource, which refuses a class \
+                     missing one where the store is constructed rather than \
+                     at the first fetch"
+                )));
+            }
+        }
+
+        // Asked once, here, where a failure is the caller's own call
+        // failing. See `PyRemoteSource::description` for why not per load.
+        let description = bound
+            .call_method0(pyo3::intern!(py, "describe"))?
+            .extract::<String>()
+            .map_err(|_| {
+                pyo3::exceptions::PyTypeError::new_err(
+                    "describe() has to return a str naming the store; it is \
+                     what provenance and every remote error report",
+                )
+            })?;
+
+        self.inner.source.install(source);
+        self.inner.layers.remote.set(PyRemoteSource::new(
+            Arc::downgrade(&self.inner.source),
+            description,
+        ));
+
+        Ok(())
+    }
+
+    /// Reads the store, and keeps what came back for the next load.
+    ///
+    /// The GIL is released for the whole refresh and re-taken by the shim
+    /// only for the Python call itself, so a slow `fetch()` does not stop
+    /// the process — and no lock is held across it, so a `fetch()` may
+    /// call back into this configuration.
+    fn refresh_remote(&self, py: Python<'_>) -> PyResult<()> {
+        if crate::remote::fetching() {
+            return Err(errors::BackendError::new_err(
+                "refresh_remote() was called from inside a remote source's own \
+                 fetch(); a fetch must not drive the refresh it is answering. \
+                 Read the store, return the document, and let the caller \
+                 reload.",
+            ));
+        }
+
+        let remote = self.inner.layers.remote;
+        let outcome = py.detach(|| remote.refresh());
+
+        match outcome {
+            Ok(()) => Ok(()),
+            Err(error) => Err(self.remote_failure(py, &error)),
+        }
+    }
+
+    /// Drops the fetched document, so the next load sees no remote layer.
+    ///
+    /// The source stays installed, as the Rust `clear_remote()` leaves it:
+    /// this drops what was fetched, not where to fetch from.
+    fn clear_remote(&self) {
+        self.inner.layers.remote.clear();
+    }
+
+    /// How the installed store names itself, or `None` if there is none.
+    #[getter]
+    fn remote_description(&self) -> Option<String> {
+        self.inner.layers.remote.describe()
     }
 
     // ── Loading and installing ─────────────────────────────────────────
@@ -783,6 +881,10 @@ impl Config {
     /// Visiting the hooks is enough to break it. The collector only has
     /// to *reach* the cycle; clearing it happens through the closure,
     /// which has a `tp_clear` of its own.
+    ///
+    /// A Python remote source is the same shape and worse: `fetch()`
+    /// implementations hold the configuration they feed as a matter of
+    /// course, and the source is reachable from here alone.
     fn __traverse__(&self, visit: PyVisit<'_>) -> Result<(), PyTraverseError> {
         // A hook may be running on another thread, and a traverse that
         // blocked on the lock would block the collector. Skipping the
@@ -796,7 +898,24 @@ impl Config {
             visit.call(hook)?;
         }
 
-        Ok(())
+        self.inner.source.traverse(&visit)
+    }
+
+    /// Drops the edges `__traverse__` reports, so a cycle through them
+    /// collects.
+    ///
+    /// The collector calls this only on an object it has already proved
+    /// unreachable, so dropping the references is the whole job — the
+    /// cached model and the staged tree are left alone deliberately, since
+    /// neither can close a cycle back to this object and `release()` is
+    /// what clears those at exit.
+    fn __clear__(&self) {
+        self.inner
+            .hooks
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clear();
+        self.inner.source.clear();
     }
 
     /// Reloads on file changes until the returned handle is stopped.
@@ -1093,6 +1212,32 @@ impl Config {
         Ok(result.into_any().unbind())
     }
 
+    /// What is true of this configuration right now, as a dict.
+    ///
+    /// A diagnostic like the four above it, and it fixes the sources for
+    /// the same reason they do: the numbers live in the engine, and asking
+    /// for them is what builds one.
+    fn status(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        let status = self.core_status(py)?;
+
+        Ok(crate::telemetry::config_status(py, &status)?
+            .into_any()
+            .unbind())
+    }
+
+    /// How the fetches from this configuration's store have gone, as a dict.
+    ///
+    /// Unlike `status()` this touches no engine: the remote slot is the
+    /// same `&'static Remote` a `refresh_remote()` reaches, so asking a
+    /// configuration that has never loaded does not fix its sources.
+    fn remote_status(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        let status = self.core_remote_status();
+
+        Ok(crate::telemetry::remote_status(py, &status)?
+            .into_any()
+            .unbind())
+    }
+
     /// The resolved section, without deserializing it into the model.
     fn snapshot(&self, py: Python<'_>) -> PyResult<Snapshot> {
         let inner = Arc::clone(&self.inner);
@@ -1135,6 +1280,12 @@ impl Config {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .take();
+        // A Python remote source outliving finalization is the same crash
+        // class a watcher thread is: the shim the engine holds is reached
+        // from a leaked `static`, and dropping the object here is what
+        // makes a late fetch answer "released" instead of calling into a
+        // Python that is no longer there.
+        self.inner.source.clear();
         let _ = py;
     }
 
@@ -1148,6 +1299,23 @@ impl Config {
 }
 
 impl Config {
+    /// The engine's own `ConfigStatus`, for the exposition next door.
+    ///
+    /// Not a conversion: `Exposition` renders from the engine's struct, so
+    /// no number is turned into a Python float and back — and, more to the
+    /// point, the monotonic instants inside it are never reconstructed
+    /// from an elapsed time they cannot be recovered from.
+    pub(crate) fn core_status(&self, py: Python<'_>) -> PyResult<dynamic_config::ConfigStatus> {
+        let inner = Arc::clone(&self.inner);
+
+        Ok(self.inner.dynamic(py, &inner)?.status())
+    }
+
+    /// The engine's own `RemoteStatus`, on the same terms.
+    pub(crate) fn core_remote_status(&self) -> dynamic_config::RemoteStatus {
+        self.inner.layers.remote.status()
+    }
+
     /// Publishes the model for whatever the engine just installed.
     fn publish_current(&self, py: Python<'_>) -> PyResult<()> {
         let inner = Arc::clone(&self.inner);
@@ -1157,6 +1325,34 @@ impl Config {
             Some(tree) => self.inner.commit(py, &tree),
             None => Ok(()),
         }
+    }
+
+    /// A failed refresh as the exception a caller catches.
+    ///
+    /// The categorised error carries no part of the Python exception's own
+    /// message — a store's exception routinely carries the URL it called —
+    /// so the exception itself is attached as `__cause__`, where the
+    /// traceback is and where a `raise ... from ...` would have put it.
+    fn remote_failure(&self, py: Python<'_>, error: &Error) -> PyErr {
+        let Some(original) = self.inner.source.take_failure() else {
+            // Nothing Python refused: no source installed, or an async one.
+            return errors::to_py_err(py, error);
+        };
+
+        let original = original.bind(py).clone();
+
+        // `KeyboardInterrupt` and `SystemExit` are the interpreter
+        // talking, not the store. Re-raising a Ctrl-C as `RemoteError`
+        // would make a hung fetch uninterruptible in the one way Python
+        // guarantees it is not.
+        if !original.is_instance_of::<pyo3::exceptions::PyException>() {
+            return PyErr::from_value(original);
+        }
+
+        let failure = errors::to_py_err(py, error);
+        failure.set_cause(py, Some(PyErr::from_value(original)));
+
+        failure
     }
 
     /// A crate error as the exception that mirrors it — with Pydantic's
