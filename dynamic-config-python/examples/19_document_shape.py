@@ -19,6 +19,7 @@ import json
 import os
 import tempfile
 from pathlib import Path
+from typing import Optional
 
 from pydantic import BaseModel, ConfigDict
 
@@ -160,7 +161,10 @@ def a_field_nothing_supplies(directory: Path) -> None:
     class Tolerant(BaseModel):
         host: str
         port: int = 8000
-        tags: list[str] | None = None
+        # `Optional[list[str]]` rather than `list[str] | None`: Pydantic
+        # evaluates a model's annotations at class creation, and the floor
+        # this package supports is 3.9, where PEP 604 does not evaluate.
+        tags: Optional[list[str]] = None
 
     config = DynamicConfig(Tolerant, key="server").file(str(path))
     print(f"  with a default:       {config.load()}")

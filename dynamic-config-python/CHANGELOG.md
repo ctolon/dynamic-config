@@ -54,31 +54,6 @@ breaking.
   configuration with no field list was indistinguishable from a clean
   one.
 
-### Changed
-
-- **Every compiled method now carries a docstring naming each of its
-  parameters**, and the `Config` class documents its constructor
-  arguments where `help()` shows them — a signature a developer had to
-  guess at was a parameter they had to go and read the source for. The
-  decorator's own docstring gained the same list, one row per keyword
-  and the fluent call it stands for.
-
-- **`whole_document()`, and `whole_document=True` on the decorator**: reads
-  each document as this model's values, with no section header —
-  `{"host": "0.0.0.0", "port": 8000}` and nothing above it. The key still
-  names the environment prefix, the cache entry and the diagnostics, and
-  `key=""` is allowed for a configuration with nothing to call itself,
-  whose environment layer is then the prefix alone (`APP_PORT`).
-
-  `examples/19_document_shape.py` runs it, together with the three
-  questions next to it that the binding answers differently from the
-  engine: a key the model does not declare is ignored by a `BaseModel`,
-  refused under `extra="forbid"`, and **always** refused by a dataclass —
-  which has no `extra` setting to consult, so the builder names the field
-  it could not place.
-
-### Added
-
 - **`dynamic_config.remote.TlsConfig`.** The remote wheel's TLS vocabulary,
   re-exported here with the stores — a private certificate authority and a
   client certificate, as file paths or PEM bytes. Nothing in this wheel
@@ -387,7 +362,47 @@ breaking.
   interpreter; the release job asserts its own wheel tags, so widening it
   is a matter of running it once.
 
+### Changed
+
+- **Every compiled method now carries a docstring naming each of its
+  parameters**, and the `Config` class documents its constructor
+  arguments where `help()` shows them — a signature a developer had to
+  guess at was a parameter they had to go and read the source for. The
+  decorator's own docstring gained the same list, one row per keyword
+  and the fluent call it stands for.
+
+- **`whole_document()`, and `whole_document=True` on the decorator**: reads
+  each document as this model's values, with no section header —
+  `{"host": "0.0.0.0", "port": 8000}` and nothing above it. The key still
+  names the environment prefix, the cache entry and the diagnostics, and
+  `key=""` is allowed for a configuration with nothing to call itself,
+  whose environment layer is then the prefix alone (`APP_PORT`).
+
+  `examples/19_document_shape.py` runs it, together with the three
+  questions next to it that the binding answers differently from the
+  engine: a key the model does not declare is ignored by a `BaseModel`,
+  refused under `extra="forbid"`, and **always** refused by a dataclass —
+  which has no `extra` setting to consult, so the builder names the field
+  it could not place.
+
+- `changes()` says what it does: it yields the installed model once per
+  wake, latest-wins, rather than one entry per install. `on_reload` is
+  the surface that runs for every install.
+- `Watch.detach()` records that it opts out of the `atexit` sweep — a
+  detached watcher is no longer reachable, which is the trade the call
+  exists to make.
+
 ### Fixed
+
+- **The suite and the examples are held to the 3.9 floor by a test rather
+  than by one CI row.** `from __future__ import annotations` makes every
+  annotation a string, so `list[str] | None` in a model body compiles
+  anywhere and fails at *class creation* on 3.9, where Pydantic resolves
+  it and PEP 604 does not evaluate — which is a slow way to find out, on
+  the one interpreter a laptop may not have. `tests/test_floor_syntax.py`
+  parses both wheels' suites and this one's examples on whatever
+  interpreter is running: no PEP 604 where something evaluates
+  annotations, and nothing newer than 3.9's grammar anywhere.
 
 Everything here came out of a review of the release branch, and each one
 is now pinned by a test.
@@ -478,15 +493,6 @@ is now pinned by a test.
   `tests/typing/usage.py` now runs under `mypy --strict` in CI, checking
   a file written the way a *caller* writes one, because types that
   regress for a user are invisible to a test suite.
-
-### Changed
-
-- `changes()` says what it does: it yields the installed model once per
-  wake, latest-wins, rather than one entry per install. `on_reload` is
-  the surface that runs for every install.
-- `Watch.detach()` records that it opts out of the `atexit` sweep — a
-  detached watcher is no longer reachable, which is the trade the call
-  exists to make.
 
 ### Security
 

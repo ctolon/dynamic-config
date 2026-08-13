@@ -13,6 +13,7 @@ from __future__ import annotations
 import dataclasses
 import json
 from pathlib import Path
+from typing import Optional
 
 import pytest
 from pydantic import BaseModel, ConfigDict
@@ -204,7 +205,10 @@ def test_a_model_default_covers_what_no_source_supplies(workspace: Path) -> None
     class Tolerant(BaseModel):
         host: str
         port: int = 8000
-        tags: list[str] | None = None
+        # `Optional[list[str]]`, not `list[str] | None`: Pydantic evaluates a
+        # model's annotations when the class is created, and this suite runs
+        # on the 3.9 floor, where PEP 604 unions do not evaluate.
+        tags: Optional[list[str]] = None
 
     Path("config.json").write_text(json.dumps({"server": {"host": "0.0.0.0"}}))
 
