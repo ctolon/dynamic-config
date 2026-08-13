@@ -470,7 +470,12 @@ jobs:
         env:
           CARGO_TARGET_DIR: ${{ github.workspace }}/target/python-remote
       # Both wheels, installed the way a user installs them.
-      - run: pip install --no-index --find-links dynamic-config-python/dist --find-links dist dynamic-config-py-remote
+      # `../` because this step runs in the remote wheel's directory: the base
+      # wheel's `dist` is its sibling, and pip *warns* about a find-links path
+      # that does not exist rather than failing on it — so the mistake shows
+      # up as "no matching distribution" for a wheel that was built two steps
+      # earlier.
+      - run: pip install --no-index --find-links ../dynamic-config-python/dist --find-links dist dynamic-config-py-remote
         working-directory: dynamic-config-python-remote
       # The container-backed cases skip themselves when there is no Docker
       # daemon; everything else runs against scripted servers.

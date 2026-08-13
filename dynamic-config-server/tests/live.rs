@@ -96,7 +96,21 @@ async fn a_real_server_on_an_ephemeral_port_serves_over_tcp() {
 /// tell "event-driven" from "nobody wired it up" from the outside.
 #[tokio::test]
 async fn a_file_change_reloads_a_section_with_nothing_polling() {
-    let directory = tempfile::tempdir().expect("a temporary directory");
+    // Under the crate rather than the system temporary directory, which is
+    // what the engine's own watcher tests do and for the same reason: on
+    // macOS `/var` is a symlink to `/private/var`, so FSEvents reports the
+    // resolved path and never matches a watch registered on the link; on
+    // Windows the runner's TEMP is an 8.3 short name and the events carry the
+    // long one. Neither is this crate's bug and neither is worth a
+    // canonicalisation dance in a test — a directory with no symlink over it
+    // has neither problem.
+    let root = std::path::Path::new("tests/scratch");
+    std::fs::create_dir_all(root).expect("a scratch directory");
+
+    let directory = tempfile::Builder::new()
+        .prefix("live")
+        .tempdir_in(root)
+        .expect("a temporary directory under the crate");
     let file = directory.path().join("billing.toml");
     std::fs::write(&file, "[billing]\nhost = 'db.internal'\n").expect("writable");
 

@@ -26,6 +26,11 @@ Cargo.toml.orig
 # none of it and `cargo test` never dirties the tree.
 /dynamic-config/tests/scratch/
 
+# Same, for the config server's watcher test: the system temporary directory
+# is a symlink on macOS and an 8.3 short name on Windows, and a file watcher
+# notices both — so that test writes under the crate instead.
+/dynamic-config-server/tests/scratch/
+
 /RELEASE-CHECKLIST.md
 
 # The Python extension's build and tool output. The wheel and the compiled

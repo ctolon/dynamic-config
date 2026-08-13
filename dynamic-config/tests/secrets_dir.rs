@@ -243,6 +243,10 @@ fn a_missing_directory_is_skipped_like_a_missing_file() {
     assert_eq!(config.host, "localhost");
 }
 
+// Only the `cfg(unix)` test below constructs this: permissions and symlinks
+// are what it is about, and on Windows the type would be dead code that
+// `-D warnings` refuses.
+#[cfg(unix)]
 #[dynamic_config]
 #[derive(Debug, Deserialize)]
 struct Unreadable {
@@ -287,6 +291,10 @@ fn an_unreadable_directory_is_an_io_error_naming_the_path_and_no_contents() {
     );
 }
 
+// Only the `cfg(unix)` test below constructs this: permissions and symlinks
+// are what it is about, and on Windows the type would be dead code that
+// `-D warnings` refuses.
+#[cfg(unix)]
 #[dynamic_config]
 #[derive(Debug, Deserialize)]
 struct Mounted {
