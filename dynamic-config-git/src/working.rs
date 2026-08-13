@@ -370,17 +370,27 @@ impl Drop for Temporary {
 /// Not recursive, on purpose: a recursive create silently adopts whatever is
 /// already there, and what is already there might be a symlink into somebody
 /// else's directory.
+/// Two functions rather than one with a `#[cfg]` block inside it: the block
+/// form leaves the `let mut builder` it needs unused on Windows, which is an
+/// error under this workspace's `-D warnings` and one that reading the Unix
+/// branch will never show you.
+#[cfg(unix)]
 fn create_private(path: &Path) -> std::io::Result<()> {
-    let mut builder = std::fs::DirBuilder::new();
+    use std::os::unix::fs::DirBuilderExt as _;
 
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::DirBuilderExt;
+    std::fs::DirBuilder::new().mode(0o700).create(path)
+}
 
-        builder.mode(0o700);
-    }
-
-    builder.create(path)
+/// **Windows has no `0700`**, and this crate does not pretend otherwise: the
+/// directory inherits the parent's ACL. A deployment keeping fetched objects
+/// on a shared Windows host should name a [`cache_dir`] whose permissions it
+/// has already decided, rather than trusting a default this crate did not
+/// set.
+///
+/// [`cache_dir`]: crate::Builder::cache_dir
+#[cfg(not(unix))]
+fn create_private(path: &Path) -> std::io::Result<()> {
+    std::fs::DirBuilder::new().create(path)
 }
 
 #[cfg(test)]
