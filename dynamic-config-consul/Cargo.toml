@@ -33,7 +33,7 @@ testcontainers-modules = { version = "0.15", features = ["consul"] }
 # so it is in no build a user of this crate produces.
 rcgen = "0.14"
 
-serde = { version = "1.0.210", features = ["derive"] }
+serde = { version = "1.0.221", features = ["derive"] }
 dynamic-config = { workspace = true, features = ["json"] }
 
 [package.metadata.docs.rs]

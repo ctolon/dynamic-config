@@ -162,3 +162,13 @@ convention = "pep257"
 
 [tool.ruff.lint.isort]
 known-first-party = ["dynamic_config"]
+
+# `dynamic_config/remote.py` re-exports the opt-in second wheel, which is by
+# definition not installed in every environment that type-checks this one —
+# CI's base-wheel job is exactly such an environment, and that is where this
+# was found. `ignore_missing_imports` applies *only* when the module cannot be
+# found: with the extra installed, mypy checks the re-exports as it always
+# would, so the names do not quietly become `Any` for the people who have it.
+[[tool.mypy.overrides]]
+module = "dynamic_config_remote"
+ignore_missing_imports = true

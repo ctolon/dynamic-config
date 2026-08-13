@@ -61,9 +61,11 @@ jobs:
       - run: >
           cargo clippy --workspace --all-targets --all-features
           --exclude dynamic-config-python
+          --exclude dynamic-config-python-remote
       - run: >
           cargo clippy --workspace --all-targets --no-default-features
           --exclude dynamic-config-python
+          --exclude dynamic-config-python-remote
       - run: cargo clippy -p dynamic-config-python --lib
 
   test:
@@ -97,6 +99,7 @@ jobs:
           --exclude dynamic-config-firestore
           --exclude dynamic-config-embedded
           --exclude dynamic-config-python
+          --exclude dynamic-config-python-remote
       # `no_std` and the workspace's `--features full` do not mix: this crate
       # has its own features and no `full`.
       - run: cargo test -p dynamic-config-embedded --features std,async
@@ -130,6 +133,7 @@ jobs:
           --exclude dynamic-config-firestore
           --exclude dynamic-config-embedded
           --exclude dynamic-config-python
+          --exclude dynamic-config-python-remote
           -- --test-threads=1
         if: matrix.os == 'ubuntu-latest'
       # Doctests document the default feature set, so they are skipped when it
@@ -445,6 +449,11 @@ jobs:
             echo "::error::the Python packages disagree: base $base, remote $remote"
             exit 1
           fi
+      # The remote wheel carries the etcd client, which compiles its gRPC
+      # stubs at build time and needs the `protoc` binary the runner image
+      # does not carry. The base wheel's job needs none of this: it carries
+      # no store.
+      - run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
       - run: pip install maturin pytest pytest-asyncio mypy ruff
       # A target directory each, and it is not a nicety: both wheels' cdylib
       # is `[lib] name = "_core"`, so they write the same `lib_core.so`. Two
@@ -771,6 +780,7 @@ jobs:
           --exclude dynamic-config-redis --exclude dynamic-config-s3
           --exclude dynamic-config-firestore --exclude dynamic-config-embedded
           --exclude dynamic-config-python
+          --exclude dynamic-config-python-remote
           --fail-under-lines 80
           --lcov --output-path lcov.info
       - name: summary

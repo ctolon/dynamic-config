@@ -37,9 +37,16 @@ rcgen = "0.14"
 # client-certificate paths are proved by a handshake rather than by inspecting
 # the configuration that was going to be handed to one. Already in the tree
 # under `ureq`; named here so a test can build a server with it. Dev-only.
-rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+# `0.23.31`, shared across the workspace, and not a preference. Three
+# requirements meet here: `aws-lc-rs` as a feature name does not exist before
+# 0.23.2, `aws-smithy-http-client` requires `^0.23.31`, and
+# `dynamic-config-python-remote` puts every store and the server in one graph.
+# `-Z direct-minimal-versions` pins each direct declaration to its *own*
+# floor, so any floor below the union's maximum is a contradiction rather
+# than a lower bound.
+rustls = { version = "0.23.31", default-features = false, features = ["ring", "std"] }
 
-serde = { version = "1.0.210", features = ["derive"] }
+serde = { version = "1.0.221", features = ["derive"] }
 dynamic-config = { workspace = true, features = ["json"] }
 
 [package.metadata.docs.rs]

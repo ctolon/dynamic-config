@@ -64,7 +64,7 @@ tokio = { version = "1.47", default-features = false, features = [
 futures-core = { version = "0.3.31", default-features = false, features = [
     "std",
 ] }
-serde = { version = "1.0.210", features = ["derive"] }
+serde = { version = "1.0.221", features = ["derive"] }
 serde_json = "1.0.127"
 
 # --- TLS, behind the `tls` feature ---------------------------------------
@@ -83,12 +83,19 @@ serde_json = "1.0.127"
 # therefore adds no crate to the lockfile that a `--all-features` build did
 # not already contain, which is a different and much better trade than the
 # one this crate turned down when it recorded "no second TLS stack".
-rustls = { version = "0.23", default-features = false, features = [
+# `0.23.31`, shared across the workspace, and not a preference. Three
+# requirements meet here: `aws-lc-rs` as a feature name does not exist before
+# 0.23.2, `aws-smithy-http-client` requires `^0.23.31`, and
+# `dynamic-config-python-remote` puts every store and the server in one graph.
+# `-Z direct-minimal-versions` pins each direct declaration to its *own*
+# floor, so any floor below the union's maximum is a contradiction rather
+# than a lower bound.
+rustls = { version = "0.23.31", default-features = false, features = [
     "ring",
     "std",
     "tls12",
 ], optional = true }
-tokio-rustls = { version = "0.26", default-features = false, features = [
+tokio-rustls = { version = "0.26.2", default-features = false, features = [
     "ring",
     "tls12",
 ], optional = true }
@@ -101,7 +108,13 @@ tokio-rustls = { version = "0.26", default-features = false, features = [
 # different halves of the same crate and neither build should compile the
 # other's.
 hyper = { version = "1.7", default-features = false, optional = true }
-hyper-util = { version = "0.1", default-features = false, optional = true }
+# `0.1.16`: the `service` feature this crate turns on arrived in 0.1.2, and
+# `aws-smithy-http-client` — in the same graph whenever the Python remote
+# wheel is built — requires `^0.1.16`. Under `-Z direct-minimal-versions`
+# every direct declaration is pinned to its *own* floor, so a floor below
+# what anything else in the union needs is a contradiction rather than a
+# preference.
+hyper-util = { version = "0.1.16", default-features = false, optional = true }
 
 # --- the client half, behind the `client` feature -------------------------
 #
@@ -113,14 +126,17 @@ hyper-util = { version = "0.1", default-features = false, optional = true }
 dynamic-config-store-core = { workspace = true, optional = true }
 # Reading a bounded response body, and an empty request one. Already beneath
 # axum; naming it adds no crate.
-http-body-util = { version = "0.1", optional = true }
-bytes = { version = "1.10", optional = true }
+http-body-util = { version = "0.1.2", optional = true }
+# `1.11.1`: `async-nats` requires it, and `dynamic-config-python-remote`
+# puts that crate and this one in one graph — a floor of `^1.10` here pins
+# 1.10.0 under `-Z direct-minimal-versions` and contradicts it.
+bytes = { version = "1.11.1", optional = true }
 # The platform's trust store, for the case store-core defines as "an empty
 # `TlsConfig` is not no-TLS, it is the platform's own roots". Already in this
 # workspace's lockfile, and it links no OpenSSL: `openssl-probe` finds the
 # usual certificate *paths* and reads them, which is what a program without
 # an OpenSSL dependency has to do to find what OpenSSL would have found.
-rustls-native-certs = { version = "0.8", optional = true }
+rustls-native-certs = { version = "0.8.1", optional = true }
 
 [features]
 default = []
@@ -158,9 +174,15 @@ client = [
 
 [dev-dependencies]
 # Drives the real router without a socket: `ServiceExt::oneshot`.
-tower = { version = "0.5", features = ["util"] }
-http-body-util = "0.1"
-tempfile = "3"
+# `0.5.2`: axum 0.8 itself requires `^0.5.2`, and under
+# `-Z direct-minimal-versions` this crate's own `^0.5` would pin 0.5.0 and
+# contradict it.
+tower = { version = "0.5.2", features = ["util"] }
+http-body-util = "0.1.2"
+# `3.26`: `gix-odb` requires it, and `dynamic-config-python-remote` puts the
+# git store in the same graph as everything else. `-Z direct-minimal-versions`
+# pins a bare `3` to 3.0.0, which nothing in that union can build against.
+tempfile = "3.26"
 tokio = { version = "1.47", features = [
     "rt-multi-thread",
     "macros",
@@ -184,7 +206,7 @@ rcgen = { version = "0.14", default-features = false, features = [
 ] }
 # The client half of the handshake test: a real TLS client presenting a real
 # certificate to a real socket.
-tokio-rustls = { version = "0.26", default-features = false, features = [
+tokio-rustls = { version = "0.26.2", default-features = false, features = [
     "ring",
     "tls12",
 ] }
