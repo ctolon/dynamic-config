@@ -26,8 +26,6 @@ breaking.
 
 ## [Unreleased]
 
-## 0.1.0 — 2026-08-14
-
 ### Added
 
 - **`Values`: a configuration with no schema class.** The Python half of
