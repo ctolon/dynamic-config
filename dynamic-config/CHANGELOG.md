@@ -25,6 +25,24 @@ bumps the patch. A change to the minimum supported Rust version is breaking.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`clear_remote()` no longer ends a running watch.** Clearing the fetched
+  document bumped the same counter a source replacement bumps, so every
+  `RemoteSink` taken before the call went permanently stale: the store had
+  not changed and the stream was still delivering, but the next push was
+  refused for belonging to a source that had been "replaced" — which is how
+  a watch loop is told to stop. The two events are counted apart now, one
+  number for source identity and one for the document epoch, so a `clear`
+  still discards a fetch that was in flight and leaves the watch alone.
+- **A fetch that lands after its source was replaced no longer reports on
+  the replacement.** The document was fenced and the status was not, so an
+  old fetch's success marked the new store as fetched and healthy — one
+  nothing had yet spoken to — and an old failure marked it as down. Both
+  status updates now happen under the same generation check as the document
+  commit, and inside the one lock that reads it rather than as a check
+  followed by a write.
+
 ## [0.6.0] — 2026-08-13
 
 ### Added

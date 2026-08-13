@@ -310,11 +310,48 @@ struct State {
     /// Bumped on every source change. A fetch snapshots it before the network
     /// round trip and commits only if it has not moved — a result from a
     /// source that is no longer installed is discarded, never stored.
+    ///
+    /// It is *source identity*, and that is the whole of it: a
+    /// [`RemoteSink`] holds one for the life of a watch loop, so anything
+    /// that moves this number ends that loop.
     generation: u64,
+    /// Bumped by [`clear`](Remote::clear), and by nothing else.
+    ///
+    /// A counter of its own rather than a bump of `generation`, because the
+    /// two questions differ: clearing drops the *document* and leaves the
+    /// source installed. Folding it into `generation` made every live
+    /// [`RemoteSink`] permanently stale — a watch loop whose store had not
+    /// changed and whose stream was still delivering would have every later
+    /// push refused for belonging to a source that had been "replaced". The
+    /// in-flight fetch a `clear` must still discard is fenced on this.
+    cleared: u64,
     /// How the fetches have gone. Under the same lock as everything else
     /// here, so a scrape cannot read a count that belongs to one source
     /// beside a document that belongs to another.
     status: RemoteStatus,
+}
+
+/// The state a fetch started under, in the two numbers that can invalidate
+/// its result: the source it was fetching from, and the document epoch it
+/// was fetching into.
+///
+/// Captured before the round trip and compared after it. Both halves are
+/// needed and neither is enough: a replaced source must discard the result,
+/// and so must a `clear` — but only the first ends a watch, which is why
+/// they are counted apart.
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct Fence {
+    generation: u64,
+    cleared: u64,
+}
+
+impl Fence {
+    fn of(state: &State) -> Self {
+        Self {
+            generation: state.generation,
+            cleared: state.cleared,
+        }
+    }
 }
 
 /// `Arc` rather than `Box`: an async fetch borrows the source across an await
@@ -337,6 +374,7 @@ impl Remote {
                 source: None,
                 fetched: None,
                 generation: 0,
+                cleared: 0,
                 status: RemoteStatus::empty(),
             }),
         }
@@ -351,6 +389,7 @@ impl Remote {
                 source: None,
                 fetched: None,
                 generation: 0,
+                cleared: 0,
                 status: RemoteStatus::empty(),
             }),
         }
@@ -399,11 +438,11 @@ impl Remote {
     /// If no source is installed, if the installed one is async — use
     /// [`refresh_async`](Self::refresh_async) — or if the fetch fails.
     pub fn refresh(&self) -> Result<(), Error> {
-        let (source, generation) = {
+        let (source, fence) = {
             let state = self.state();
 
             match state.source.as_ref() {
-                Some(Kind::Blocking(source)) => (Arc::clone(source), state.generation),
+                Some(Kind::Blocking(source)) => (Arc::clone(source), Fence::of(&state)),
 
                 #[cfg(feature = "async")]
                 Some(Kind::Asynchronous(source)) => {
@@ -433,8 +472,8 @@ impl Remote {
             Ok(fetched) => {
                 let elapsed = started.elapsed();
 
-                self.commit(fetched, generation);
-                self.record_fetch(Some(elapsed));
+                self.commit(fetched, fence);
+                self.record_fetch(Some(elapsed), fence.generation);
 
                 #[cfg(feature = "tracing")]
                 crate::telemetry::fetched(&span, elapsed);
@@ -442,7 +481,7 @@ impl Remote {
                 Ok(())
             }
             Err(error) => {
-                self.record_fetch_failure(&error);
+                self.record_fetch_failure(&error, fence.generation);
 
                 #[cfg(feature = "tracing")]
                 crate::telemetry::fetch_failed(&span, &error);
@@ -471,11 +510,11 @@ impl Remote {
     pub async fn refresh_async(&self) -> Result<(), Error> {
         // Cloned out of the lock before anything is awaited: holding a `std`
         // mutex across an await point is how an executor deadlocks itself.
-        let (source, generation) = {
+        let (source, fence) = {
             let state = self.state();
 
             match state.source.as_ref() {
-                Some(source) => (source.clone(), state.generation),
+                Some(source) => (source.clone(), Fence::of(&state)),
                 None => return Err(none_installed()),
             }
         };
@@ -499,8 +538,8 @@ impl Remote {
             Ok(fetched) => {
                 let elapsed = started.elapsed();
 
-                self.commit(fetched, generation);
-                self.record_fetch(Some(elapsed));
+                self.commit(fetched, fence);
+                self.record_fetch(Some(elapsed), fence.generation);
 
                 #[cfg(feature = "tracing")]
                 crate::telemetry::fetched(&span, elapsed);
@@ -508,7 +547,7 @@ impl Remote {
                 Ok(())
             }
             Err(error) => {
-                self.record_fetch_failure(&error);
+                self.record_fetch_failure(&error, fence.generation);
 
                 #[cfg(feature = "tracing")]
                 crate::telemetry::fetch_failed(&span, &error);
@@ -599,8 +638,18 @@ impl Remote {
     }
 
     /// Records a fetch that returned a document.
-    fn record_fetch(&self, elapsed: Option<Duration>) {
+    ///
+    /// Fenced on the source `generation` the fetch started under, and under
+    /// the one lock that reads it: [`set`](Self::set) empties the status
+    /// along with the document, so an old fetch landing afterwards would
+    /// otherwise report the *replacement* as fetched and healthy — a store
+    /// nothing has yet spoken to.
+    fn record_fetch(&self, elapsed: Option<Duration>, generation: u64) {
         let mut state = self.state();
+
+        if state.generation != generation {
+            return;
+        }
 
         state.status.fetches = state.status.fetches.saturating_add(1);
         state.status.last_fetch = Some(Instant::now());
@@ -614,8 +663,16 @@ impl Remote {
     /// last one it did answer with in place, and the counter is what says
     /// so. Only the failure's category and key path are kept — the same
     /// [`FailureStatus`] a refused reload records, for the same reason.
-    fn record_fetch_failure(&self, error: &Error) {
+    ///
+    /// Fenced like [`record_fetch`](Self::record_fetch), and for the mirror
+    /// reason: an old fetch's failure must not report a store that has just
+    /// been installed as down.
+    fn record_fetch_failure(&self, error: &Error, generation: u64) {
         let mut state = self.state();
+
+        if state.generation != generation {
+            return;
+        }
 
         // Saturating rather than wrapping, as `ConfigCell` does: a counter
         // that rolls over to zero reads as "healthy" at the worst moment.
@@ -644,21 +701,26 @@ impl Remote {
     /// same way [`set`](Self::set) discards one: clearing is a state change
     /// like any other, and a document a caller explicitly dropped must not
     /// come back from a round trip that started before they dropped it.
+    ///
+    /// The *source* is left alone, and so is every [`RemoteSink`] taken from
+    /// it: a watch loop delivering from the same store keeps delivering, and
+    /// its next push installs normally. Dropping the document is not
+    /// replacing the store, and only replacing the store ends a watch.
     pub fn clear(&self) {
         let mut state = self.state();
 
         state.fetched = None;
-        state.generation = state.generation.wrapping_add(1);
+        state.cleared = state.cleared.wrapping_add(1);
     }
 
-    /// Stores a fetch result, unless the source changed while it was in
-    /// flight — then the result belongs to a store nobody asked about any
-    /// more, and storing it would pair the new source with the old store's
-    /// values.
-    fn commit(&self, fetched: Fetched, generation: u64) {
+    /// Stores a fetch result, unless the slot moved while it was in flight —
+    /// the source was replaced, and the result belongs to a store nobody
+    /// asked about any more, or the document was cleared and putting this
+    /// one back would undo that.
+    fn commit(&self, fetched: Fetched, fence: Fence) {
         let mut state = self.state();
 
-        if state.generation == generation {
+        if Fence::of(&state) == fence {
             state.fetched = Some(fetched);
         }
     }
@@ -936,6 +998,26 @@ mod tests {
         }
     }
 
+    /// The same, for the failing half of the fence: parked mid-fetch, and
+    /// what it finally returns is an error.
+    struct ParkedThenBroken {
+        started: std::sync::Arc<std::sync::Barrier>,
+        release: std::sync::Arc<std::sync::Barrier>,
+    }
+
+    impl RemoteSource for ParkedThenBroken {
+        fn fetch(&self) -> Result<Fetched, Error> {
+            self.started.wait();
+            self.release.wait();
+
+            Broken.fetch()
+        }
+
+        fn describe(&self) -> String {
+            "a parked store that then breaks".to_owned()
+        }
+    }
+
     /// The race the generation fence exists for: a fetch from the *old*
     /// source lands after `set` installed a new one. Its result must be
     /// discarded — new source, old store's document is the state this
@@ -1016,6 +1098,96 @@ mod tests {
             None,
             "a document the caller cleared must not come back from a fetch \
              that started before they cleared it"
+        );
+    }
+
+    /// Clearing the document must not end a watch. The source is untouched
+    /// by `clear()`, so a loop that took its sink before the call is still
+    /// serving the store it was created for, and its next delivery installs
+    /// like any other. The first shape of this fence counted both events on
+    /// one number and made every live sink permanently stale.
+    #[test]
+    fn clearing_the_document_leaves_a_watchs_sink_alive() {
+        let remote = Remote::new();
+        remote.set(Fake(r#"{"db": {"host": "a"}}"#));
+
+        // What `remote_sink()` captures, once, where a loop starts.
+        let generation = remote.generation();
+
+        remote.clear();
+
+        remote
+            .install_if(generation, Fetched::new("{}", crate::Format::Json))
+            .expect("clearing the document does not replace the source");
+        assert!(remote.document().is_some());
+    }
+
+    /// The status fence, from the side `set` opens: an old fetch that
+    /// succeeds after its source was replaced must not report the
+    /// replacement — which nothing has yet spoken to — as fetched and
+    /// healthy. `set` empties the status precisely so that it says nothing
+    /// about a store that is no longer installed.
+    #[test]
+    fn a_late_fetch_does_not_report_the_replacement_as_healthy() {
+        let started = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let release = std::sync::Arc::new(std::sync::Barrier::new(2));
+
+        let remote = std::sync::Arc::new(Remote::new());
+        remote.set(Parked {
+            started: std::sync::Arc::clone(&started),
+            release: std::sync::Arc::clone(&release),
+        });
+
+        let refresher = {
+            let remote = std::sync::Arc::clone(&remote);
+            std::thread::spawn(move || remote.refresh())
+        };
+
+        started.wait();
+        remote.set(Fake(r#"{"db": {"host": "fresh"}}"#));
+        release.wait();
+
+        let _ = refresher.join().expect("the refresher must not panic");
+
+        let status = remote.status();
+        assert_eq!(
+            status.fetches, 0,
+            "the replacement has been fetched from nobody"
+        );
+        assert_eq!(status.last_fetch, None);
+        assert_eq!(status.reachable(), None);
+    }
+
+    /// The same fence for a failure. A store that was replaced while its
+    /// fetch was erroring must not leave the new one looking down.
+    #[test]
+    fn a_late_failure_does_not_report_the_replacement_as_down() {
+        let started = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let release = std::sync::Arc::new(std::sync::Barrier::new(2));
+
+        let remote = std::sync::Arc::new(Remote::new());
+        remote.set(ParkedThenBroken {
+            started: std::sync::Arc::clone(&started),
+            release: std::sync::Arc::clone(&release),
+        });
+
+        let refresher = {
+            let remote = std::sync::Arc::clone(&remote);
+            std::thread::spawn(move || remote.refresh())
+        };
+
+        started.wait();
+        remote.set(Fake(r#"{"db": {"host": "fresh"}}"#));
+        release.wait();
+
+        let _ = refresher.join().expect("the refresher must not panic");
+
+        let status = remote.status();
+        assert_eq!(status.consecutive_failures, 0);
+        assert_eq!(
+            status.reachable(),
+            None,
+            "nothing has yet asked the replacement anything"
         );
     }
 
@@ -1220,11 +1392,10 @@ impl RemoteSink {
     /// store's address never enters a [`RemoteStatus`], for the reason its
     /// own documentation gives.
     pub fn failed(&self, error: &Error) {
-        if self.remote.generation() != self.generation {
-            return;
-        }
-
-        self.remote.record_fetch_failure(error);
+        // The fence is inside `record_fetch_failure`, under the same lock
+        // that reads the generation: a check here and a write there would
+        // leave a window for a replacement to land between them.
+        self.remote.record_fetch_failure(error, self.generation);
     }
 
     /// Installs a document the watch pushed, and reloads.
