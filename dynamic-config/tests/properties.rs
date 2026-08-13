@@ -8,6 +8,8 @@
 
 #![cfg(feature = "json")]
 
+use std::path::Path;
+
 use proptest::prelude::*;
 
 proptest! {
@@ -153,9 +155,24 @@ proptest! {
             return Ok(());
         };
 
-        prop_assert!(variant.starts_with("/etc/app/config."), "{}", variant);
-        prop_assert!(variant.ends_with(".toml"), "{}", variant);
-        prop_assert_eq!(variant.matches('/').count(), 3, "{}", variant);
+        // Asserted through `Path` rather than on the string: `with_file_name`
+        // rebuilds a path with the *platform's* separator, so on Windows the
+        // variant of `/etc/app/config.toml` reads `/etc/app\config..toml`.
+        // Both spellings name the same file, and the property this test is
+        // about — the variant is a sibling — is about the file.
+        let base = Path::new("/etc/app/config.toml");
+        let variant = Path::new(&variant);
+
+        prop_assert_eq!(variant.parent(), base.parent(), "{:?}", variant);
+        prop_assert_eq!(variant.extension(), base.extension(), "{:?}", variant);
+        prop_assert!(
+            variant
+                .file_name()
+                .and_then(std::ffi::OsStr::to_str)
+                .is_some_and(|name| name.starts_with("config.")),
+            "{:?}",
+            variant
+        );
     }
 
     /// Whatever a document calls its top-level key, the profile it is filed
