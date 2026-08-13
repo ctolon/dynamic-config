@@ -1171,14 +1171,21 @@ impl RemoteSink {
     /// documents still takes its own, once, where it starts.
     ///
     /// ```no_run
-    /// # use dynamic_config::telemetry::Exposition;
     /// # struct DbConfig;
     /// # impl DbConfig {
     /// #     fn remote_sink() -> dynamic_config::RemoteSink { unimplemented!() }
     /// # }
-    /// let mut exposition = Exposition::new();
-    /// exposition.add_remote("db", &DbConfig::remote_sink().status());
+    /// let status = DbConfig::remote_sink().status();
+    ///
+    /// if status.reachable() == Some(false) {
+    ///     eprintln!("the store has stopped answering");
+    /// }
     /// ```
+    ///
+    /// With the `telemetry` feature, `Exposition::add_remote` renders the
+    /// same status as Prometheus text; see
+    /// [the telemetry module](crate::telemetry). The example above stays
+    /// feature-free on purpose, because this method is not.
     #[must_use]
     pub fn status(&self) -> RemoteStatus {
         self.remote.status()
