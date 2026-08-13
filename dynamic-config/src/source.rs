@@ -390,6 +390,19 @@ pub struct LoadSpec<'a> {
     /// Rejects environment values from the yes/no/on/off family instead of
     /// letting them arrive as strings where a boolean was meant.
     pub strict_env: bool,
+    /// Whether the documents this reads carry a section header at all.
+    ///
+    /// `false` — the default — means every top-level key in a document is a
+    /// section, which is what lets one file serve several configuration
+    /// types and what [`key`](Self::key) selects out of it.
+    ///
+    /// `true` means the document *is* this section's values —
+    /// `{"host": "0.0.0.0", "port": 8000}`, with no `server` above it. The
+    /// key still names the load: the environment prefix, the cache entry
+    /// and what a diagnostic calls this configuration are all still built
+    /// from it. It simply stops being looked for inside the document. See
+    /// [`with_whole_document`](Self::with_whole_document).
+    pub whole_document: bool,
 }
 
 impl std::fmt::Debug for LoadSpec<'_> {
@@ -408,6 +421,7 @@ impl std::fmt::Debug for LoadSpec<'_> {
             .field("nest", &self.nest)
             .field("allow_empty_env", &self.allow_empty_env)
             .field("strict_env", &self.strict_env)
+            .field("whole_document", &self.whole_document)
             .finish()
     }
 }
@@ -433,6 +447,7 @@ impl<'a> LoadSpec<'a> {
             nest: DEFAULT_NEST,
             allow_empty_env: false,
             strict_env: false,
+            whole_document: false,
         }
     }
 
@@ -557,6 +572,35 @@ impl<'a> LoadSpec<'a> {
         self
     }
 
+    /// Reads each document as this section's values, with no section header.
+    ///
+    /// The default layout is one file, several sections: every top-level key
+    /// names one, and [`key`](Self::key) says which is yours. That is what
+    /// lets a `config.toml` hold `[db]` and `[server]` for two configuration
+    /// types that know nothing about each other.
+    ///
+    /// A file that is *only* this configuration has no use for the header,
+    /// and a file this crate did not write may not have one to begin with —
+    /// a container image's `{"host": "0.0.0.0", "port": 8000}`, a chart's
+    /// rendered values, a file some other tool owns. This says so.
+    ///
+    /// Everything else is unchanged, and that is the point: the environment
+    /// prefix is still `{prefix}{KEY}_`, profile variants
+    /// (`config.production.toml`) still layer on top, defaults, flags,
+    /// overrides, aliases, the secrets directory, the cache and every
+    /// diagnostic all behave exactly as they do for a sectioned load. Only
+    /// where a document's values are found changes.
+    ///
+    /// It applies to **every** document this spec reads — listed files,
+    /// discovered files, inline text and the remote store's document —
+    /// because a load whose sources disagreed about their own shape would be
+    /// a load nobody could reason about.
+    #[must_use]
+    pub const fn with_whole_document(mut self, whole: bool) -> Self {
+        self.whole_document = whole;
+        self
+    }
+
     /// The environment variable that names the profile, if configured.
     pub(crate) fn profile_variable(&self) -> Option<&'a str> {
         self.profile_env
@@ -571,9 +615,18 @@ impl<'a> LoadSpec<'a> {
     }
 
     /// The full environment prefix for this section: `"APP_"` + `"db"` → `"APP_DB_"`.
+    ///
+    /// An empty key contributes nothing rather than an extra underscore: a
+    /// whole-document load may have no name to give the section, and
+    /// `APP__HOST` is a variable nobody would guess they had to set.
     pub(crate) fn full_env_prefix(&self) -> Option<String> {
-        self.env_prefix
-            .map(|prefix| format!("{prefix}{}_", self.key.to_ascii_uppercase()))
+        self.env_prefix.map(|prefix| {
+            if self.key.is_empty() {
+                prefix.to_owned()
+            } else {
+                format!("{prefix}{}_", self.key.to_ascii_uppercase())
+            }
+        })
     }
 }
 

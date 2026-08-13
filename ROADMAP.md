@@ -82,8 +82,11 @@ Two 0.6 answers are worth keeping in view because they will be asked again:
 [`WriteDurability` mode](#writedurability-as-api-own) nobody has measured a
 need for, the [runtime-agnostic S3 sleep](#runtime-agnostic-s3-watch-sleep-own)
 that is blocked on the AWS SDK, [serde_yaml](#serde_yamls-future-own) which
-moves when figment moves, and [a ninth store](#a-store-nobody-has-asked-for-yet-own)
-nobody has asked for.
+moves when figment moves, [a ninth store](#a-store-nobody-has-asked-for-yet-own)
+nobody has asked for, [msgspec as a fifth Python
+schema](#msgspec-as-a-python-schema-own) waiting on somebody who actually
+wants it, and [a book per crate](#one-book-or-a-book-per-crate-own) — where
+the answer is probably per-crate entry *points* rather than fourteen books.
 
 ---
 
@@ -151,6 +154,42 @@ and an eighth done casually would be worse than none.
 
 ---
 
+## Documentation
+
+### One book, or a book per crate **[own]**
+
+Sixteen crates share one mdBook, and the chapters that are *about a crate*
+rather than about the engine are already the majority of it: eight store
+pages, the config server and its threat model, the CLI, ten Python pages.
+They are correct and they are in the wrong place — a reader who has added
+`dynamic-config-vault` to a project does not want the engine's builder tour
+first, and a store's own README is a paragraph pointing at a page in
+somebody else's book.
+
+**What a per-crate book would buy.** docs.rs already builds one thing per
+crate; a book beside it would match how the crates are actually consumed
+(one store at a time), let a store's chapter carry its own version, and stop
+the root book growing a section per crate forever.
+
+**What it would cost, and this is the decision.** Fourteen mdBook builds in
+CI instead of one, fourteen link-check runs, and — the part that is not
+mechanical — the cross-references. Half the value in the store chapters is
+that they can say *this is the same `TlsConfig` every other store takes* and
+link to it; split, that becomes an inter-book link that no tool checks and
+that breaks silently when a page is renamed. The Python pages are worse:
+they are the same engine described for another language, and half of what
+they say is "as the Rust side does, here".
+
+**The shape that is probably right** is neither: keep one book and make the
+per-crate entry points real. A `book/src/crates/{name}.md` per crate, linked
+from that crate's README as its front door, holding what is specific to it
+and linking inward for what is shared — so a reader arriving from crates.io
+lands on their crate and not on chapter one, without splitting a link graph
+that is doing real work. It is worth doing when a store's chapter is long
+enough that this is not just a redirect; today two of them are.
+
+---
+
 ## The longer arc
 
 ### Instruction counts, not just wall clock **[own]**
@@ -185,6 +224,42 @@ candidate.
 New capability proposals queue behind stability during that window. The problem worth
 solving by then is not a missing feature; it is that nothing this
 sophisticated has been beaten up by strangers yet.
+
+### msgspec as a Python schema **[own]**
+
+The binding's schema surface is an adapter — `validate`, `field_names`,
+`secret_paths`, `is_instance` — and there are four implementations of it
+already: Pydantic, a Pydantic dataclass, a plain `dataclasses.dataclass`,
+and `Values`, which is no schema at all.
+[msgspec](https://jcristharif.com/msgspec/) is the obvious fifth: a
+`msgspec.Struct` is a declaration in the same shape as the other two typed
+ones, it validates on decode, and it is markedly faster than Pydantic at
+exactly the thing this engine asks a schema to do — turn one resolved
+mapping into one instance, once per reload.
+
+**What makes it a decision rather than an afternoon.** The adapter's four
+questions map cleanly (`msgspec.convert` for the validate half,
+`msgspec.structs.fields` for the names), but two things do not:
+
+- **Secrets have no declaration.** Pydantic has `SecretStr`, a dataclass has
+  `field(metadata={"secret": True})`, and msgspec has neither — its
+  `Meta`/`Annotated` carries constraints, not a place for a library's own
+  flag. So either `Annotated[str, Meta(extra={"secret": True})]` becomes the
+  spelling, which is this package inventing a convention in somebody else's
+  namespace, or a msgspec configuration passes `secrets=[..]` the way a
+  `Values` one does. The second is honest and already exists; it is also a
+  second way to say a thing the other schemas say once.
+- **The error shape.** `InvalidError.errors` carries Pydantic's own report,
+  scrubbed of values, because a Python program branches on it. msgspec
+  raises a `ValidationError` with a message and no structured report, so a
+  msgspec configuration's `errors` would be empty — which is fine and has to
+  be *said*, or it reads as a bug.
+
+Neither is hard; both are decisions about a surface that is meant to look
+the same whichever schema you brought. Worth doing when somebody is
+actually reaching for msgspec — the extra is `dynamic-config-py[msgspec]`,
+the adapter is one file next to `_pydantic.py`, and the base install goes on
+depending on nothing.
 
 ### `WriteDurability` as API **[own]**
 0.1.0 fsyncs every atomic write, unconditionally. If someone measures real

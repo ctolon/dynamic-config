@@ -61,6 +61,17 @@ pub struct SectionConfig {
     /// `APP_` reading `APP_BILLING_*`.
     #[serde(default)]
     pub env_prefix: Option<String>,
+    /// Whether these files carry a section header at all.
+    ///
+    /// `false` — the default — reads the application as a top-level key
+    /// inside each file, so one file can hold several applications.
+    ///
+    /// `true` says each file *is* this section: `{"host": …, "port": …}`
+    /// with nothing above it. A config server is routinely pointed at
+    /// files somebody else's tool writes, and those files have no reason
+    /// to carry a header this server invented.
+    #[serde(default)]
+    pub whole_document: bool,
 }
 
 /// Where the server's own certificate, key and client CA live.
@@ -634,6 +645,7 @@ mod tests {
             profile: profile.to_owned(),
             files: vec!["config.toml".to_owned()],
             env_prefix: None,
+            whole_document: false,
         }
     }
 

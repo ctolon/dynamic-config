@@ -20,7 +20,9 @@ lookup on a cached instance.
 The schema can be a `dataclasses.dataclass` (no dependencies), a Pydantic
 model or a `pydantic_settings.BaseSettings` class — `pip install
 dynamic-config-py[pydantic]` and `[pydantic-settings]` buy those, `[all]`
-buys both.
+buys both. It can also be `Values`, which is no schema at all: a
+configuration read by dotted path, for keys a program learns at run time
+rather than declares.
 
 This module is the public surface and nothing else. What it re-exports
 lives next door, one concern per file:
@@ -37,6 +39,7 @@ lives next door, one concern per file:
     _schema.py        which adapter a class gets, and the questions both answer
     _settings.py      the pydantic-settings bridge
     _telemetry.py     `status()`, and the Prometheus exposition
+    _values.py        `Values`, for a configuration with no schema class
     _core.pyi         stubs for the compiled half
 
 Import from the package, not from those: a leading underscore is a
@@ -88,6 +91,7 @@ from ._lifetime import HookGuard, Watch
 from ._remote import Format, RemoteSource
 from ._schema import secret_paths
 from ._telemetry import ConfigStatus, Exposition, Failure, RemoteStatus
+from ._values import Values
 
 #: This package's version. It moves on its own schedule — see the
 #: versioning note in the book: the wheel embeds the engine rather than
@@ -128,6 +132,7 @@ __all__ = [
     "Snapshot",
     "TypeMismatchError",
     "UnknownKey",
+    "Values",
     "Watch",
     "__engine_version__",
     "__version__",

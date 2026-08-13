@@ -163,7 +163,7 @@ impl Exposition {
 
 #[pymethods]
 impl Exposition {
-    /// An empty exposition.
+    /// An empty exposition: `Exposition()`. No parameters.
     #[new]
     fn new() -> Self {
         Self {
@@ -171,11 +171,19 @@ impl Exposition {
         }
     }
 
-    /// Adds one configuration under the caller's labels.
+    /// Adds one configuration's series: `add(labels, config)`.
     ///
     /// The configuration is asked for its status here, not held: what the
     /// exposition keeps is the snapshot, so a scrape cannot be affected by
     /// a reload landing between two `add` calls.
+    ///
+    /// Parameters:
+    ///     labels: `(name, value)` pairs put on every series this call
+    ///         adds. The caller names the configuration — nothing here
+    ///         does it for them, because the only string a configuration
+    ///         has for itself is a section key that means nothing outside
+    ///         the process.
+    ///     config: the configuration to read the status of.
     fn add(&self, py: Python<'_>, labels: Vec<(String, String)>, config: &Config) -> PyResult<()> {
         let status = config.core_status(py)?;
 
@@ -184,18 +192,21 @@ impl Exposition {
         Ok(())
     }
 
-    /// Adds one configuration's remote source under the caller's labels.
+    /// Adds one configuration's remote series: `add_remote(labels, config)`.
     ///
-    /// Usually the same labels the configuration's own `add` was given, so
-    /// the two halves join in a query: *the store answered* beside *the
-    /// document installed* is the pair an operator is comparing.
+    /// Parameters:
+    ///     labels: as `add` — and usually the *same* labels that call was
+    ///         given, so the two halves join in a query: *the store
+    ///         answered* beside *the document installed* is the pair an
+    ///         operator is comparing.
+    ///     config: the configuration whose store to report on.
     fn add_remote(&self, labels: Vec<(String, String)>, config: &Config) {
         let status = config.core_remote_status();
 
         self.with(|exposition| exposition.add_remote_with(&borrowed(&labels), &status));
     }
 
-    /// The exposition, as a Prometheus text body.
+    /// The exposition, as a Prometheus text body. No parameters.
     fn render(&self) -> String {
         self.with(|exposition| exposition.render())
     }

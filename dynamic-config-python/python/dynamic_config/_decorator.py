@@ -101,6 +101,7 @@ def dynamic_config(
     nest: str | None = None,
     allow_empty_env: bool = False,
     strict_env: bool = False,
+    whole_document: bool = False,
     env_files: Sequence[str] = (),
     profile_env: str | None = None,
     cache: str | None = None,
@@ -108,7 +109,7 @@ def dynamic_config(
     init: bool = False,
     watch: float | None = None,
 ) -> Callable[[type[M]], type[M]]:
-    """Attaches a configuration to a Pydantic model class.
+    """Attaches a configuration to a model class.
 
         @dynamic_config(key="db", files=["config.toml"], env="APP_")
         class Database(BaseModel):
@@ -120,12 +121,66 @@ def dynamic_config(
 
     The decorator builds a :class:`DynamicConfig`, stores it as
     ``Model.config`` and attaches ``current``/``try_current``/``reload``/
-    ``source_of``/``explain`` classmethods over it.
+    ``source_of``/``explain`` classmethods over it. Everything it does is
+    something :class:`DynamicConfig` can be told directly; this is the
+    declaration-shaped spelling of it, and every argument below is one
+    fluent call.
 
     It does **not** load by default: import time is the wrong time to read
     files, and a script that disagrees passes ``init=True``. Decorating one
     class twice is an error, mirroring the crate's one-configuration-per-type
     rule.
+
+    Every argument is keyword-only, and every one of them maps to a method
+    on the configuration:
+
+    Parameters:
+        key: the section key — which top-level table of each document is
+            this model's. Also names the environment prefix
+            (``env="APP_"`` reads ``APP_{KEY}_*``), the cache entry and
+            every diagnostic. Pass ``""`` for a configuration with nothing
+            to call itself, together with ``whole_document=True``.
+            :meth:`DynamicConfig.__init__`.
+        files: files to merge, in order — later files win, a missing one
+            is skipped, and the format comes from the extension.
+            :meth:`DynamicConfig.file`.
+        discover: ``(name, paths)``: look for ``{name}.{ext}`` in each
+            directory, below anything ``files`` listed.
+            :meth:`DynamicConfig.discover`.
+        env: the environment prefix, trailing underscore included. The
+            environment is read above every file.
+            :meth:`DynamicConfig.env`.
+        nest: the separator that means nesting inside a variable name;
+            ``__`` unless given. :meth:`DynamicConfig.nest`.
+        allow_empty_env: treat ``FOO=`` as set-to-empty rather than
+            unset. :meth:`DynamicConfig.allow_empty_env`.
+        strict_env: refuse ambiguous environment spellings — ``off``,
+            ``no``, ``nil``. :meth:`DynamicConfig.strict_env`.
+        whole_document: the documents carry **no section header**; each
+            one *is* this model's values, as in
+            ``{"host": "0.0.0.0", "port": 8000}``.
+            :meth:`DynamicConfig.whole_document`.
+        env_files: ``.env`` files, read as the environment layer and just
+            below the real environment. :meth:`DynamicConfig.env_file`.
+        profile_env: the variable naming the active profile, so
+            ``config.toml`` gains ``config.production.toml``.
+            :meth:`DynamicConfig.profile_env`.
+        cache: where to write the last-known-good cache, or ``None`` for
+            none. :meth:`DynamicConfig.cache`.
+        cache_mode: ``"redacted"`` (the default), ``"full"`` or
+            ``"fingerprint"``. Read only when ``cache`` is given.
+        init: load at decoration time. ``False`` by default, because
+            import time is the wrong time to read files — a script that
+            disagrees says so here.
+        watch: seconds of debounce for a file watcher started at
+            decoration time, or ``None`` for no watcher. The watcher is
+            detached — it runs for the life of the process — and it does
+            not load: pair it with ``init=True`` for a class that has a
+            snapshot from the first line and follows the file after.
+
+    Returns:
+        The decorator, which returns the same class with ``config`` and
+        the classmethods attached.
     """
 
     def decorate(model: type[M]) -> type[M]:
@@ -164,6 +219,8 @@ def dynamic_config(
             config.allow_empty_env()
         if strict_env:
             config.strict_env()
+        if whole_document:
+            config.whole_document()
         for path in env_files:
             config.env_file(path)
         if profile_env is not None:

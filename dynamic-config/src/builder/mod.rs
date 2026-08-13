@@ -130,6 +130,7 @@ pub struct Builder<T> {
     nest: Option<String>,
     allow_empty_env: bool,
     strict_env: bool,
+    whole_document: bool,
     env_files: Vec<String>,
     secrets_dir: Option<String>,
     profile_env: Option<String>,
@@ -167,6 +168,7 @@ impl<T> Clone for Builder<T> {
             nest: self.nest.clone(),
             allow_empty_env: self.allow_empty_env,
             strict_env: self.strict_env,
+            whole_document: self.whole_document,
             env_files: self.env_files.clone(),
             secrets_dir: self.secrets_dir.clone(),
             profile_env: self.profile_env.clone(),
@@ -204,6 +206,7 @@ impl<T: DeserializeOwned> Builder<T> {
             nest: None,
             allow_empty_env: false,
             strict_env: false,
+            whole_document: false,
             env_files: Vec::new(),
             secrets_dir: None,
             profile_env: None,
@@ -401,6 +404,51 @@ impl<T: DeserializeOwned> Builder<T> {
         self
     }
 
+    /// Reads each document as this section's values, with no section header.
+    ///
+    /// The default is one file, several sections — every top-level key names
+    /// one, and this builder's key says which is yours. That is what lets a
+    /// `config.toml` carry `[db]` and `[server]` for two configuration types
+    /// that know nothing about each other.
+    ///
+    /// Say this when the document is *only* this configuration:
+    ///
+    /// ```json
+    /// { "host": "0.0.0.0", "port": 8000 }
+    /// ```
+    ///
+    /// ```no_run
+    /// # #[cfg(feature = "json")] {
+    /// use dynamic_config::Builder;
+    /// # use serde::Deserialize;
+    /// # #[derive(Deserialize)]
+    /// # struct Server { host: String, port: u16 }
+    /// let server: Server = Builder::new("server")
+    ///     .whole_document()
+    ///     .file("server.json")
+    ///     .env("APP_")
+    ///     .load()
+    ///     .expect("the sources read cleanly");
+    /// # }
+    /// ```
+    ///
+    /// The key keeps every other job it has: `APP_SERVER_PORT` still reaches
+    /// `port`, the cache entry and the diagnostics are still named after it,
+    /// and `""` is allowed for a configuration with nothing to call itself —
+    /// the environment layer is then just the prefix, `APP_PORT`.
+    ///
+    /// Everything else is unchanged: profile variants
+    /// (`server.production.json`), defaults, flags, overrides, aliases, the
+    /// secrets directory and a remote store's document all behave exactly as
+    /// they do for a sectioned load. It applies to **every** document this
+    /// builder reads, because sources that disagreed about their own shape
+    /// would be a configuration nobody could reason about.
+    #[must_use]
+    pub fn whole_document(mut self) -> Self {
+        self.whole_document = true;
+        self
+    }
+
     /// A `.env` file read as the environment layer, below the real thing.
     #[must_use]
     pub fn env_file(mut self, path: impl Into<String>) -> Self {
@@ -530,6 +578,7 @@ impl<T: DeserializeOwned> Builder<T> {
         let mut spec = LoadSpec::new(&self.key, &sources)
             .with_empty_env(self.allow_empty_env)
             .with_strict_env(self.strict_env)
+            .with_whole_document(self.whole_document)
             .with_env_files(&env_files);
 
         if let Some(prefix) = &self.env {
@@ -636,6 +685,7 @@ impl<T> std::fmt::Debug for Builder<T> {
             .field("env", &self.env)
             .field("env_files", &self.env_files)
             .field("strict_env", &self.strict_env)
+            .field("whole_document", &self.whole_document)
             .field("installs", &self.install.is_some())
             .finish_non_exhaustive()
     }

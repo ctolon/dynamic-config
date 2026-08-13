@@ -33,9 +33,11 @@ db = (
 ```
 
 The schema can be a `dataclasses.dataclass`, a Pydantic model, a Pydantic
-dataclass or a `BaseSettings` class. Everything else — sources,
-precedence, watching, recovery, diagnostics — is the same object either
-way; what changes is what validation means and what you install.
+dataclass or a `BaseSettings` class — or `Values`, which is no schema at
+all: a configuration read by dotted path, for the keys a program learns
+at run time rather than declares. Everything else — sources, precedence,
+watching, recovery, diagnostics — is the same object whichever it is;
+what changes is what validation means and what you install.
 
 The engine is the [`dynamic-config`] Rust crate: files, environment
 layering, `.env`, profiles, discovery, precedence, a debounced file

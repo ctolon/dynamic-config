@@ -30,64 +30,6 @@ untouched.
 
 ## [Unreleased]
 
-### Added
-
-- **`Section::installed()`**, the document and a generation that is never
-  ahead of it, and what `/{application}/{profile}` and `/paths` now answer
-  from.
-- **`DRAIN_TIMEOUT`**, the deadline on graceful shutdown, honoured by both
-  serving paths; and **`HEADER_TIMEOUT`**, the deadline on request headers
-  after a TLS handshake.
-
-### Fixed
-
-- **A response could carry the previous document under the new
-  generation.** The document and the generation were two loads in the order
-  that makes the pair lead rather than lag, so a reload landing between them
-  labelled the old document with the new number — and a client that recorded
-  it, or resumed its change stream with it, believed it had consumed an
-  update whose contents it never received. The generation is read first now,
-  so the worst case is a response labelled one install behind its own
-  contents, which costs a client one extra fetch and loses nothing.
-- **A stream resumed from a previous process could stay silent.** A
-  generation counts installs since the process started, so a restart puts
-  every section back at 1 while a reconnecting `EventSource` still sends the
-  `Last-Event-ID` the old process gave it. The opening event was sent only
-  for a *greater* generation, so a client resuming from 50 was told nothing
-  until the new process had reloaded fifty times. A resumed generation the
-  section is not at is news, whichever side of it it falls on.
-- **SIGTERM is handled.** The shutdown future waited on Ctrl-C alone, so the
-  signal a rollout actually sends fell through to the default disposition
-  and killed the process outright — the graceful path never ran in the one
-  situation its documentation was written for.
-- **Shutdown ends.** `/{application}/{profile}/stream` is a response body
-  that never finishes, so a drain that waits for every body waited for every
-  subscriber to disconnect: a rollout hung on exactly the clients that were
-  paying attention. Both serving paths now bound the drain by
-  `DRAIN_TIMEOUT`.
-- **A TLS connection has a deadline after the handshake.** The handshake
-  timeout stopped at the handshake, so a client that completed one and then
-  sent no request bytes — or dripped an incomplete header — held a socket
-  and a task indefinitely. Hyper's header-read timeout is configured, with
-  the timer it needs to be enforced.
-- **A section no route could ever reach is refused at startup.** An
-  application or profile with a space in it, one starting with a dot, or one
-  over 64 characters passed validation, and the server started and reported
-  ready while every request for it was refused by the path predicate before
-  the section map was consulted. `validate()` now applies the handlers' own
-  predicate, as `Refusal::UnroutableSection`.
-- **`client`: a password in the URL no longer reaches a diagnostic.** A
-  `user:password@` authority is refused rather than sent, but the
-  description built from the URL — quoted into every error, including that
-  refusal, and returned by `describe()` — was built before the refusal and
-  kept the password; the hand-written `Debug` printed the same field. Both
-  are redacted now.
-- **`client`: the fetch deadline covers the response body.** `with_timeout`
-  documented one deadline for connect, handshake, request *and* body, and
-  covered everything but the body: a server that sent headers and then
-  stopped writing blocked a fetch forever. One budget is started per attempt
-  and every step is bounded by what remains of it.
-
 ## [0.6.0] — 2026-08-13
 
 ### Added
@@ -256,6 +198,70 @@ untouched.
   well-formed empty scrape rather than a refusal. `6 × sections` series per
   scrape, and no label can carry a key path, a file name or a value.
 
+- **`whole_document` on a section**, for files that carry no header. The
+  section key inside a served file is the application name, which is one
+  fact rather than two — but a config server is routinely pointed at a file
+  another tool writes, and such a file has no reason to carry a header this
+  server invented. `whole_document = true` says the file *is* the section.
+  Per section, because two sections may read files of different shapes;
+  everything downstream — the environment prefix, the watcher, `/paths`,
+  `/explain`, the audit log — is unchanged.
+- **`Section::installed()`**, the document and a generation that is never
+  ahead of it, and what `/{application}/{profile}` and `/paths` now answer
+  from.
+- **`DRAIN_TIMEOUT`**, the deadline on graceful shutdown, honoured by both
+  serving paths; and **`HEADER_TIMEOUT`**, the deadline on request headers
+  after a TLS handshake.
+
+### Fixed
+
+- **A response could carry the previous document under the new
+  generation.** The document and the generation were two loads in the order
+  that makes the pair lead rather than lag, so a reload landing between them
+  labelled the old document with the new number — and a client that recorded
+  it, or resumed its change stream with it, believed it had consumed an
+  update whose contents it never received. The generation is read first now,
+  so the worst case is a response labelled one install behind its own
+  contents, which costs a client one extra fetch and loses nothing.
+- **A stream resumed from a previous process could stay silent.** A
+  generation counts installs since the process started, so a restart puts
+  every section back at 1 while a reconnecting `EventSource` still sends the
+  `Last-Event-ID` the old process gave it. The opening event was sent only
+  for a *greater* generation, so a client resuming from 50 was told nothing
+  until the new process had reloaded fifty times. A resumed generation the
+  section is not at is news, whichever side of it it falls on.
+- **SIGTERM is handled.** The shutdown future waited on Ctrl-C alone, so the
+  signal a rollout actually sends fell through to the default disposition
+  and killed the process outright — the graceful path never ran in the one
+  situation its documentation was written for.
+- **Shutdown ends.** `/{application}/{profile}/stream` is a response body
+  that never finishes, so a drain that waits for every body waited for every
+  subscriber to disconnect: a rollout hung on exactly the clients that were
+  paying attention. Both serving paths now bound the drain by
+  `DRAIN_TIMEOUT`.
+- **A TLS connection has a deadline after the handshake.** The handshake
+  timeout stopped at the handshake, so a client that completed one and then
+  sent no request bytes — or dripped an incomplete header — held a socket
+  and a task indefinitely. Hyper's header-read timeout is configured, with
+  the timer it needs to be enforced.
+- **A section no route could ever reach is refused at startup.** An
+  application or profile with a space in it, one starting with a dot, or one
+  over 64 characters passed validation, and the server started and reported
+  ready while every request for it was refused by the path predicate before
+  the section map was consulted. `validate()` now applies the handlers' own
+  predicate, as `Refusal::UnroutableSection`.
+- **`client`: a password in the URL no longer reaches a diagnostic.** A
+  `user:password@` authority is refused rather than sent, but the
+  description built from the URL — quoted into every error, including that
+  refusal, and returned by `describe()` — was built before the refusal and
+  kept the password; the hand-written `Debug` printed the same field. Both
+  are redacted now.
+- **`client`: the fetch deadline covers the response body.** `with_timeout`
+  documented one deadline for connect, handshake, request *and* body, and
+  covered everything but the body: a server that sent headers and then
+  stopped writing blocked a fetch forever. One budget is started per attempt
+  and every step is bounded by what remains of it.
+
 ### Security
 
 - **`explain` is redacted unconditionally**, on every path rather than only
@@ -323,3 +329,4 @@ untouched.
 
 [Unreleased]: https://github.com/ctolon/dynamic-config/compare/v0.6.0...HEAD
 [0.6.0]: https://github.com/ctolon/dynamic-config/compare/v0.5.0...v0.6.0
+

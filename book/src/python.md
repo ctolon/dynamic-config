@@ -14,7 +14,10 @@ The base install has **no dependencies**: the engine is compiled into the
 wheel, and a `dataclasses.dataclass` is a schema here. Pydantic is an
 extra because it is a choice — see
 [What a schema may be](python/types.md#what-a-schema-may-be) for what
-each kind validates.
+each kind validates, including `Values`, which is
+[no schema at all](python/types.md#values-a-configuration-with-no-schema):
+a configuration read by dotted path, for the keys a program learns at run
+time.
 
 ```python
 from dataclasses import dataclass

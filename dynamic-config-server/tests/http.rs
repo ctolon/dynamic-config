@@ -624,3 +624,42 @@ async fn a_refused_reload_shows_up_as_failures_and_staleness() {
         "staleness is the series an alert is written against: {body}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// A file that carries no section header
+// ---------------------------------------------------------------------------
+
+/// The file another tool wrote. A config server is routinely pointed at
+/// one, and such a file has no reason to carry a header this server
+/// invented — `whole_document = true` says so, per section, and everything
+/// downstream is unchanged.
+#[tokio::test]
+async fn a_section_may_read_files_that_carry_no_header() {
+    let directory = tempfile::tempdir().expect("a temporary directory");
+    let path = directory.path().join("billing.json");
+    std::fs::write(&path, r#"{"host": "db.internal", "pool": {"max_size": 8}}"#)
+        .expect("the temporary directory is writable");
+
+    let config = ServerConfig {
+        watch_debounce_ms: 0,
+        sections: vec![dynamic_config_server::SectionConfig {
+            application: "billing".to_owned(),
+            profile: "prod".to_owned(),
+            files: vec![path.display().to_string()],
+            env_prefix: None,
+            whole_document: true,
+        }],
+        clients: vec![client("billing-pod", common::BILLING_TOKEN, &["billing"])],
+        ..ServerConfig::default()
+    };
+
+    let fixture = start(directory, config);
+
+    let (status, body) = fixture
+        .json("/billing/prod", Some(common::BILLING_TOKEN))
+        .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["config"]["host"], "db.internal");
+    assert_eq!(body["config"]["pool"]["max_size"], 8);
+}

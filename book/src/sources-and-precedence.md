@@ -79,6 +79,22 @@ port = 8080
 A consequence worth knowing: every top-level key must be a table. A stray
 `"_comment": "..."` at the top level is a parse error, not an ignored key.
 
+## `whole_document`
+
+```rust
+ServerConfig::builder("server").whole_document().file("server.json")
+```
+
+For a file that has no header to give — a container image's
+`{"host": "0.0.0.0", "port": 8000}`, a chart's rendered values, a file
+another tool owns. The document *is* the section, and the key goes on
+naming the environment prefix, the cache entry and the diagnostics.
+
+[Document Shape](document-shape.md) is the whole story, alongside the
+three other questions people ask about the deal between a document and a
+type: a key the type does not name, a field nothing supplies, and two
+files holding half a struct each.
+
 ## `env`
 
 ```rust

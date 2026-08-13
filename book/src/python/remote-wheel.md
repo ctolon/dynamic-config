@@ -216,7 +216,9 @@ Three of them read a *file* instead, and deliberately:
 `ConsulAuth.kubernetes(...)` and `Auth.kubernetes(...)` carry a **path**,
 which the Rust crate re-reads at every login, so a projected
 service-account token the kubelet rotates already works with no callable
-at all; `GitAuth.ssh_key(...)` is the same, one layer further out, because
+at all — the path is `SERVICE_ACCOUNT_TOKEN`, exported so a deployment
+that mounts it somewhere else can say where without spelling
+`/var/run/secrets/...` from memory; `GitAuth.ssh_key(...)` is the same, one layer further out, because
 `ssh` opens the key file itself at every fetch.
 `NatsAuth.credentials_file(...)` is the idea one layer up: it *is* a
 callable, reading the file on every fetch.

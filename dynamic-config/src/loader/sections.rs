@@ -80,7 +80,11 @@ impl figment::Provider for Cached {
 /// `.nested()` promotes each file's top-level keys to profiles, which is what
 /// makes `select(key)` pick out one section and lets several config structs
 /// share the same files.
-pub(super) fn merge(figment: Figment, source: &Source<'_>) -> Result<Figment, Error> {
+pub(super) fn merge(
+    figment: Figment,
+    source: &Source<'_>,
+    layout: Layout<'_>,
+) -> Result<Figment, Error> {
     // A foreign provider is merged as figment sees it: this crate's mapping of
     // top-level keys to sections is a thing it does to *documents*, and a
     // provider hands over values that are already figment's.
@@ -97,10 +101,15 @@ pub(super) fn merge(figment: Figment, source: &Source<'_>) -> Result<Figment, Er
 
     match source.path() {
         Some(path) if source.is_encrypted() => {
-            merge_encrypted_file(figment, Path::new(path), format)
+            merge_encrypted_file(figment, Path::new(path), format, layout)
         }
-        Some(path) => merge_file(figment, Path::new(path), format),
-        None => merge_text(figment, source.inline_text().unwrap_or_default(), format),
+        Some(path) => merge_file(figment, Path::new(path), format, layout),
+        None => merge_text(
+            figment,
+            source.inline_text().unwrap_or_default(),
+            format,
+            layout,
+        ),
     }
 }
 
@@ -153,12 +162,17 @@ impl figment::Provider for Foreign<'_> {
 /// string"`, so a value traced back to it names the file it actually came from.
 /// A missing file is skipped, exactly as an unencrypted one is: that is what
 /// makes an optional `secrets.json.age` work.
-fn merge_encrypted_file(figment: Figment, path: &Path, format: Format) -> Result<Figment, Error> {
+fn merge_encrypted_file(
+    figment: Figment,
+    path: &Path,
+    format: Format,
+    layout: Layout<'_>,
+) -> Result<Figment, Error> {
     // Reachable only through the macro-free API: `#[dynamic_config]` turns a
     // `.age` file without the feature into a compile error naming it.
     #[cfg(not(feature = "decrypt"))]
     {
-        let _ = (&figment, format);
+        let _ = (&figment, format, layout);
 
         Err(Error::new(
             ErrorKind::Backend,
@@ -184,7 +198,14 @@ fn merge_encrypted_file(figment: Figment, path: &Path, format: Format) -> Result
         let named = path.display().to_string();
         let plaintext = crate::decrypt::decrypt(&ciphertext, &named)?;
 
-        merge_named_text(figment, plaintext.text(), format, &named, Some(path))
+        merge_named_text(
+            figment,
+            plaintext.text(),
+            format,
+            &named,
+            Some(path),
+            layout,
+        )
     }
 }
 
@@ -198,6 +219,7 @@ pub(super) fn merge_profile_variant(
     path: &Path,
     format: Format,
     profile: Option<&str>,
+    layout: Layout<'_>,
 ) -> Result<Figment, Error> {
     let Some(profile) = profile else {
         return Ok(figment);
@@ -212,10 +234,10 @@ pub(super) fn merge_profile_variant(
         .and_then(crate::source::inner_name)
         .is_some()
     {
-        return merge_encrypted_file(figment, &variant, format);
+        return merge_encrypted_file(figment, &variant, format, layout);
     }
 
-    merge_file(figment, &variant, format)
+    merge_file(figment, &variant, format, layout)
 }
 
 /// The active profile, refused unless it can only ever name a sibling file.
@@ -296,18 +318,23 @@ fn name_variant(name: &str, profile: &str) -> Option<String> {
     Some(format!("{stem}.{profile}.{extension}"))
 }
 
-pub(super) fn merge_file(figment: Figment, path: &Path, format: Format) -> Result<Figment, Error> {
+pub(super) fn merge_file(
+    figment: Figment,
+    path: &Path,
+    format: Format,
+    layout: Layout<'_>,
+) -> Result<Figment, Error> {
     // With no format feature on, every arm below is compiled out.
     #[cfg(not(any(feature = "json", feature = "toml", feature = "yaml")))]
-    let _ = (&figment, path);
+    let _ = (&figment, path, layout);
 
     match format {
         #[cfg(feature = "json")]
-        Format::Json => Ok(figment.merge(Sections::from(Json::file(path)))),
+        Format::Json => Ok(figment.merge(Sections::new(Json::file(path), layout))),
         #[cfg(feature = "toml")]
-        Format::Toml => Ok(figment.merge(Sections::from(Toml::file(path)))),
+        Format::Toml => Ok(figment.merge(Sections::new(Toml::file(path), layout))),
         #[cfg(feature = "yaml")]
-        Format::Yaml => Ok(figment.merge(Sections::from(Yaml::file(path)))),
+        Format::Yaml => Ok(figment.merge(Sections::new(Yaml::file(path), layout))),
 
         #[allow(unreachable_patterns)]
         format => Err(disabled(format)),
@@ -323,27 +350,54 @@ pub(super) fn merge_file(figment: Figment, path: &Path, format: Format) -> Resul
 #[cfg(any(feature = "json", feature = "toml", feature = "yaml"))]
 const SCHEMA_KEY: &str = "$schema";
 
+/// Where one document's values live: under section headers, or at its root.
+///
+/// One value threaded through every merge rather than a second set of
+/// functions, because a load reads listed files, discovered files, profile
+/// variants, an encrypted file and a remote store's document — and if they
+/// did not all agree about their own shape, a configuration assembled from
+/// two of them would mean two different things.
+#[derive(Clone, Copy)]
+pub(super) struct Layout<'a> {
+    /// `Some(key)` when the documents carry no section header, and all of
+    /// each one is `key`'s values; `None` for the default, where every
+    /// top-level key names a section.
+    whole: Option<&'a str>,
+}
+
+impl<'a> Layout<'a> {
+    /// What `spec` says its documents look like.
+    pub(super) fn of(spec: &LoadSpec<'a>) -> Self {
+        Self {
+            whole: spec.whole_document.then_some(spec.key),
+        }
+    }
+}
+
 /// Top-level keys as profiles, which is what makes a key a *section*.
 ///
-/// This is what figment's `nested()` does, reimplemented for two reasons:
-/// [`SCHEMA_KEY`] has to survive, and a top-level key that is not a table
-/// deserves an error that names it. figment reports `invalid type: string,
-/// expected a map` with an offset, which is true and leaves the reader to work
-/// out that the crate treats top-level keys as sections.
+/// This is what figment's `nested()` does, reimplemented for three reasons:
+/// [`SCHEMA_KEY`] has to survive; a top-level key that is not a table
+/// deserves an error that names it — figment reports `invalid type: string,
+/// expected a map` with an offset, which is true and leaves the reader to
+/// work out that the crate treats top-level keys as sections — and a
+/// [`Layout`] with no headers has to file the whole document under one
+/// profile instead of looking for them.
 #[cfg(any(feature = "json", feature = "toml", feature = "yaml"))]
-struct Sections<P> {
+struct Sections<'a, P> {
     inner: P,
+    layout: Layout<'a>,
 }
 
 #[cfg(any(feature = "json", feature = "toml", feature = "yaml"))]
-impl<P: figment::Provider> From<P> for Sections<P> {
-    fn from(inner: P) -> Self {
-        Self { inner }
+impl<'a, P: figment::Provider> Sections<'a, P> {
+    const fn new(inner: P, layout: Layout<'a>) -> Self {
+        Self { inner, layout }
     }
 }
 
 #[cfg(any(feature = "json", feature = "toml", feature = "yaml"))]
-impl<P: figment::Provider> figment::Provider for Sections<P> {
+impl<P: figment::Provider> figment::Provider for Sections<'_, P> {
     fn metadata(&self) -> Metadata {
         self.inner.metadata()
     }
@@ -354,6 +408,19 @@ impl<P: figment::Provider> figment::Provider for Sections<P> {
         // The inner provider is *not* nested, so it answers with one profile
         // holding the whole document.
         for (_, document) in self.inner.data()? {
+            // A document with no section header *is* one section's values,
+            // so it is filed whole and nothing is assumed about its
+            // top-level keys — `{"host": "0.0.0.0", "port": 8000}` is
+            // exactly the shape the sectioned reading below has to refuse.
+            if let Some(key) = self.layout.whole {
+                let mut values = document;
+                values.remove(SCHEMA_KEY);
+
+                sections.insert(figment::Profile::from(super::section_profile(key)), values);
+
+                continue;
+            }
+
             for (key, value) in document {
                 if key == SCHEMA_KEY {
                     continue;
@@ -363,7 +430,9 @@ impl<P: figment::Provider> figment::Provider for Sections<P> {
                     return Err(figment::Error::from(format!(
                         "top-level key `{key}` is not a table; every top-level key \
                          in a config file is a section, so a value there must be a \
-                         table (`{SCHEMA_KEY}` is the one exception)"
+                         table (`{SCHEMA_KEY}` is the one exception). If this file \
+                         is not sectioned — if the whole of it is one \
+                         configuration — read it with `.whole_document()`"
                     )));
                 };
 
@@ -375,17 +444,22 @@ impl<P: figment::Provider> figment::Provider for Sections<P> {
     }
 }
 
-fn merge_text(figment: Figment, text: &str, format: Format) -> Result<Figment, Error> {
+fn merge_text(
+    figment: Figment,
+    text: &str,
+    format: Format,
+    layout: Layout<'_>,
+) -> Result<Figment, Error> {
     #[cfg(not(any(feature = "json", feature = "toml", feature = "yaml")))]
-    let _ = (&figment, text);
+    let _ = (&figment, text, layout);
 
     match format {
         #[cfg(feature = "json")]
-        Format::Json => Ok(figment.merge(Sections::from(Json::string(text)))),
+        Format::Json => Ok(figment.merge(Sections::new(Json::string(text), layout))),
         #[cfg(feature = "toml")]
-        Format::Toml => Ok(figment.merge(Sections::from(Toml::string(text)))),
+        Format::Toml => Ok(figment.merge(Sections::new(Toml::string(text), layout))),
         #[cfg(feature = "yaml")]
-        Format::Yaml => Ok(figment.merge(Sections::from(Yaml::string(text)))),
+        Format::Yaml => Ok(figment.merge(Sections::new(Yaml::string(text), layout))),
 
         #[allow(unreachable_patterns)]
         format => Err(disabled(format)),
@@ -400,9 +474,10 @@ pub(super) fn merge_named_text(
     format: Format,
     name: &str,
     file: Option<&Path>,
+    layout: Layout<'_>,
 ) -> Result<Figment, Error> {
     #[cfg(not(any(feature = "json", feature = "toml", feature = "yaml")))]
-    let _ = (&figment, text, name, file);
+    let _ = (&figment, text, name, file, layout);
 
     // A generic fn rather than a closure: a closure infers one provider type
     // from its first call and the other two formats then fail to compile.
@@ -417,11 +492,17 @@ pub(super) fn merge_named_text(
 
     match format {
         #[cfg(feature = "json")]
-        Format::Json => Ok(figment.merge(named(Sections::from(Json::string(text)), name, file))),
+        Format::Json => {
+            Ok(figment.merge(named(Sections::new(Json::string(text), layout), name, file)))
+        }
         #[cfg(feature = "toml")]
-        Format::Toml => Ok(figment.merge(named(Sections::from(Toml::string(text)), name, file))),
+        Format::Toml => {
+            Ok(figment.merge(named(Sections::new(Toml::string(text), layout), name, file)))
+        }
         #[cfg(feature = "yaml")]
-        Format::Yaml => Ok(figment.merge(named(Sections::from(Yaml::string(text)), name, file))),
+        Format::Yaml => {
+            Ok(figment.merge(named(Sections::new(Yaml::string(text), layout), name, file)))
+        }
 
         #[allow(unreachable_patterns)]
         format => Err(disabled(format)),

@@ -355,6 +355,7 @@ pub fn section(application: &str, profile: &str, file: String) -> SectionConfig 
         profile: profile.to_owned(),
         files: vec![file],
         env_prefix: None,
+        whole_document: false,
     }
 }
 

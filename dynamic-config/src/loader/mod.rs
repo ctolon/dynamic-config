@@ -286,11 +286,18 @@ fn merge_defaults(figment: Figment, spec: &LoadSpec<'_>) -> Result<Figment, Erro
 
 fn merge_discovered(mut figment: Figment, spec: &LoadSpec<'_>) -> Result<Figment, Error> {
     let profile = sections::validated_profile(spec)?;
+    let layout = sections::Layout::of(spec);
 
     if let Some(search) = &spec.search {
         for (path, format) in search.resolve() {
-            figment = sections::merge_file(figment, &path, format)?;
-            figment = sections::merge_profile_variant(figment, &path, format, profile.as_deref())?;
+            figment = sections::merge_file(figment, &path, format, layout)?;
+            figment = sections::merge_profile_variant(
+                figment,
+                &path,
+                format,
+                profile.as_deref(),
+                layout,
+            )?;
         }
     }
 
@@ -299,9 +306,10 @@ fn merge_discovered(mut figment: Figment, spec: &LoadSpec<'_>) -> Result<Figment
 
 fn merge_listed(mut figment: Figment, spec: &LoadSpec<'_>) -> Result<Figment, Error> {
     let profile = sections::validated_profile(spec)?;
+    let layout = sections::Layout::of(spec);
 
     for source in spec.sources {
-        figment = sections::merge(figment, source)?;
+        figment = sections::merge(figment, source, layout)?;
 
         if let (Some(path), Some(format)) = (source.path(), source.format()) {
             figment = sections::merge_profile_variant(
@@ -309,6 +317,7 @@ fn merge_listed(mut figment: Figment, spec: &LoadSpec<'_>) -> Result<Figment, Er
                 Path::new(path),
                 format,
                 profile.as_deref(),
+                layout,
             )?;
         }
     }
@@ -330,6 +339,7 @@ fn merge_remote(figment: Figment, spec: &LoadSpec<'_>) -> Result<Figment, Error>
                 document.format,
                 &name,
                 None,
+                sections::Layout::of(spec),
             );
         }
     }

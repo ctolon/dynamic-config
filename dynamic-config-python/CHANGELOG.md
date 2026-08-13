@@ -26,6 +26,57 @@ breaking.
 
 ## [Unreleased]
 
+## 0.1.0 — 2026-08-14
+
+### Added
+
+- **`Values`: a configuration with no schema class.** The Python half of
+  the crate's `Dynamic<Value>`, for the keys a program learns at run time
+  rather than declares — a plugin host, a feature-flag table, a tool
+  reading a file it did not write. Pass the class where a model goes and
+  every load hands back a `Mapping` read by dotted path
+  (`values["cache.ttl"]`), with every value already a plain Python
+  object. The same layers, profiles, watcher, cache, hooks and
+  diagnostics as any other configuration.
+
+  It gives up exactly what it never declared, and says so rather than
+  assuming: `check()` reports `unknown_checked = False` — an empty
+  unknown-key list from a configuration with no field names is not an
+  all-clear — and a `redacted` or `fingerprint` cache is **refused**
+  until `DynamicConfig(Values, key=…, secrets=[…])` names what to
+  redact, rather than writing a file that claims a redaction it did not
+  perform. `secrets=` works for a declared model too, where it adds to
+  what the model already says. `examples/20_schemaless.py` runs all of
+  it.
+
+- **`Report.unknown_checked`**, and a `str(report)` that renders the same
+  table the Rust crate prints. Without the flag, a report from a
+  configuration with no field list was indistinguishable from a clean
+  one.
+
+### Changed
+
+- **Every compiled method now carries a docstring naming each of its
+  parameters**, and the `Config` class documents its constructor
+  arguments where `help()` shows them — a signature a developer had to
+  guess at was a parameter they had to go and read the source for. The
+  decorator's own docstring gained the same list, one row per keyword
+  and the fluent call it stands for.
+
+- **`whole_document()`, and `whole_document=True` on the decorator**: reads
+  each document as this model's values, with no section header —
+  `{"host": "0.0.0.0", "port": 8000}` and nothing above it. The key still
+  names the environment prefix, the cache entry and the diagnostics, and
+  `key=""` is allowed for a configuration with nothing to call itself,
+  whose environment layer is then the prefix alone (`APP_PORT`).
+
+  `examples/19_document_shape.py` runs it, together with the three
+  questions next to it that the binding answers differently from the
+  engine: a key the model does not declare is ignored by a `BaseModel`,
+  refused under `extra="forbid"`, and **always** refused by a dataclass —
+  which has no `extra` setting to consult, so the builder names the field
+  it could not place.
+
 ### Added
 
 - **`dynamic_config.remote.TlsConfig`.** The remote wheel's TLS vocabulary,

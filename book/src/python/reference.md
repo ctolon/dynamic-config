@@ -10,16 +10,17 @@ never the thing waiting.
 from dynamic_config import DynamicConfig, dynamic_config, set_executor, changed_paths
 ```
 
-## `DynamicConfig(model, key, *, executor=None)`
+## `DynamicConfig(model, key, *, executor=None, secrets=())`
 
 `Generic[M]`, so every method that hands a model back hands back *your*
 model rather than `Any`.
 
-| | |
-|---|---|
-| `model` | the schema class: a `dataclasses.dataclass`, a Pydantic model, or a Pydantic dataclass — see [What a schema may be](types.md#what-a-schema-may-be) |
-| `key` | the section this configuration reads (`[db]` in a TOML file) |
-| `executor` | which pool runs the blocking half of the async calls; `None` follows [`set_executor`](#set_executorexecutor) |
+| Parameter | Default | Meaning |
+|---|---|---|
+| `model` | required | the schema class: a `dataclasses.dataclass`, a Pydantic model, a Pydantic dataclass — see [What a schema may be](types.md#what-a-schema-may-be) — or [`Values`](#values), which is no schema at all |
+| `key` | required | the section this configuration reads (`[db]` in a TOML file). It also names the environment prefix, the cache entry and every diagnostic; `""` is a configuration with nothing to call itself, which goes with `whole_document()` |
+| `executor` | `None` | which pool runs the blocking half of the async calls; `None` follows [`set_executor`](#set_executorexecutor) |
+| `secrets` | `()` | dotted paths whose values must never reach a diagnostic. A declared model already says which of its fields are secret and these are *added* to that; for a `Values` configuration they are the only such statement, and the [cache](#last-known-good-cache) modes that redact are refused without them |
 
 ### `DynamicConfig.from_settings(model, key, *, executor=None)`
 
@@ -45,6 +46,7 @@ anything has loaded — sources are how a configuration is *identified*.
 | `nest(separator)` | The separator that means nesting inside a variable name; `__` unless said |
 | `allow_empty_env()` | Treats `FOO=` as set-to-empty rather than unset |
 | `strict_env()` | Refuses ambiguous spellings — `off`, `no`, `nil` — naming the variable |
+| `whole_document()` | Reads each document as this model's values, with no section header. See [Document Shape](../document-shape.md) |
 | `env_file(path)` | A `.env` read as the environment layer, just below the real one |
 | `profile_env(variable)` | The variable naming the active profile, for sibling files |
 | `cache(path, mode="redacted")` | A last-known-good cache; `redacted`, `full` or `fingerprint` |
@@ -172,6 +174,17 @@ is the whole reason it exists: it reloads on entry and again on exit.
 | `check()` | [`Report`](#report) — would it load, and is anything unknown |
 | `snapshot()` | [`Snapshot`](#snapshot) — the resolved section as data |
 
+### Telemetry
+
+| Method | Returns |
+|---|---|
+| `status()` | [`ConfigStatus`](telemetry.md#configstatus-configstatus) — generation, staleness, the last reason, the failure streak |
+| `remote_status()` | [`RemoteStatus`](telemetry.md#configremote_status-remotestatus) — fetches, staleness, `reachable`, the failure streak |
+
+Both are a handful of atomic loads: no source is re-read and nothing
+blocks, which is what makes them cheap enough for a scrape. `Exposition`
+renders either as Prometheus text — see [Telemetry](telemetry.md).
+
 ### Properties
 
 | | |
@@ -254,6 +267,12 @@ subprocess test imports the module with Pydantic made unimportable.
 
 ## Module functions
 
+### `__version__` and `__engine_version__`
+
+The wheel's version, and the version of the `dynamic-config` crate
+compiled into it. The two move independently — the Python package
+versions on its own schedule — so a bug report can name both.
+
 ### `set_executor(executor)`
 
 Process-wide choice of which thread pool pays for the blocking half of
@@ -271,6 +290,24 @@ the first. A field lists **every** name a file could carry it under (each
 alias and the field name), because a secret spelled the other way is
 still a secret; see [Aliases](types.md#aliases-in-all-four-shapes).
 
+### `Values`
+
+A configuration with **no schema class**: pass `Values` where a model
+goes, and every load hands back one of these — a `Mapping` read by dotted
+path. See [`Values`: a configuration with no
+schema](types.md#values-a-configuration-with-no-schema) for what it gives
+up, and the [schemaless chapter](../schemaless.md) for the Rust half.
+
+| Member | Answers |
+|---|---|
+| `values[path]` | the value at a dotted path, or `KeyError` |
+| `values.get(path, default=None)` | the same, with a default |
+| `path in values` | whether anything is there |
+| `len(values)`, `iter(values)` | the **top-level** keys |
+| `values.to_dict()` | a plain `dict` of the whole configuration |
+| `values.leaf_paths()` | every dotted path that holds a value, sorted |
+| `repr(values)` | the keys, never a value |
+
 ### `changed_paths(previous, current)`
 
 Which paths differ between two models (or mappings), as
@@ -281,24 +318,32 @@ secrets, whose values are compared but never reported.
 
 Attaches a configuration to a model class and returns the class.
 
-| Argument | Default | Meaning |
-|---|---|---|
-| `key` | required | The section key |
-| `files` | `()` | Files, in merge order |
-| `discover` | `None` | `(name, paths)` |
-| `env` | `None` | Environment prefix |
-| `nest` | `None` | Nesting separator |
-| `allow_empty_env` | `False` | |
-| `strict_env` | `False` | |
-| `env_files` | `()` | `.env` files |
-| `profile_env` | `None` | Variable naming the profile |
-| `cache` / `cache_mode` | `None` / `"redacted"` | Last-known-good cache |
-| `init` | `False` | Load at decoration — off, because import time is not load time |
-| `watch` | `None` | Start a detached watcher with this debounce |
+Every argument is keyword-only, and every one of them is one fluent call
+on the configuration it builds — the decorator is the
+declaration-shaped spelling, not a second set of behaviour.
+
+| Argument | Default | The call it makes | Meaning |
+|---|---|---|---|
+| `key` | required | `DynamicConfig(model, key)` | The section key: which top-level table is this model's. Also names the environment prefix, the cache entry and every diagnostic. `""` for a configuration with nothing to call itself |
+| `files` | `()` | `.file(path)`, once each | Files to merge, in order — later wins, a missing one is skipped |
+| `discover` | `None` | `.discover(name, paths)` | `(name, paths)`: look for `{name}.{ext}` in each directory, below the listed files |
+| `env` | `None` | `.env(prefix)` | The environment prefix, trailing underscore included |
+| `nest` | `None` | `.nest(separator)` | What means nesting inside a variable name; `__` unless given |
+| `allow_empty_env` | `False` | `.allow_empty_env()` | Treat `FOO=` as set-to-empty rather than unset |
+| `strict_env` | `False` | `.strict_env()` | Refuse ambiguous spellings — `off`, `no`, `nil` |
+| `whole_document` | `False` | `.whole_document()` | The documents carry **no section header**: each one *is* this model's values. See [Document Shape](../document-shape.md) |
+| `env_files` | `()` | `.env_file(path)` | `.env` files, read as the environment layer and below the real one |
+| `profile_env` | `None` | `.profile_env(variable)` | The variable naming the active profile, for sibling files |
+| `cache` / `cache_mode` | `None` / `"redacted"` | `.cache(path, mode)` | Last-known-good cache; `redacted`, `full` or `fingerprint` |
+| `init` | `False` | `.init()` | Load at decoration — off, because import time is not load time |
+| `watch` | `None` | `.watch(debounce).detach()` | Start a detached watcher with this debounce. It does not load: pair it with `init=True` |
 
 It attaches `config`, `current`, `try_current`, `reload`, `source_of` and
 `explain` to the class, and refuses a model that declares a field with
 one of those names.
+
+`examples/21_decorator_whole_document.py` runs every row of that table,
+and shows `whole_document=True` against a file with no header.
 
 ### `Configured`
 
@@ -326,8 +371,15 @@ values.
 ### `Report`
 
 `key`, `resolved` (tuple of `Resolved`: `path`, `origin`), `unknown`
-(tuple of `UnknownKey`: `path`, `suggestion`), `failure`, and the
-`is_clean` property.
+(tuple of `UnknownKey`: `path`, `suggestion`), `failure`,
+`unknown_checked`, and the `is_clean` property. `str(report)` renders the
+table the Rust crate prints — paths and origins, never values.
+
+`unknown_checked` is `False` when there was no field list to compare a
+document against, which is a [`Values`](#values) configuration: an empty
+`unknown` from one is not an all-clear, and the rendering says
+`unknown keys: not checked (no field list)` rather than letting it read
+as one.
 
 ### `Snapshot`
 
@@ -337,6 +389,20 @@ values.
 ### `Change`
 
 `path` and `kind` (`added`, `removed`, `changed`).
+
+### `ConfigStatus`, `RemoteStatus`, `Failure`
+
+What `status()` and `remote_status()` hand back, and the failure either
+may carry. Frozen dataclasses of counts, durations and fixed enums —
+never a value, never a store address. Field by field in
+[Telemetry](telemetry.md).
+
+### `Exposition`
+
+One or more configurations' status as a Prometheus text body:
+`Exposition().add(name, config).add_remote(name, config).render()`, plus
+`add_with`/`add_remote_with` for labels of your own. Built per scrape and
+thrown away. The metric names are API; see [Telemetry](telemetry.md).
 
 ### `RemoteSource`
 

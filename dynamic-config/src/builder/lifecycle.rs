@@ -171,9 +171,13 @@ impl<T: DeserializeOwned> Builder<T> {
                 return Err(Error::new(
                     ErrorKind::Backend,
                     "a redacted or fingerprint cache needs to know which \
-                     fields are secret, and only the generated `builder()` on \
-                     a `#[dynamic_config]` type knows; use that, or \
-                     `CacheMode::Full`, spelled out",
+                     fields are secret, and nothing here has said. A \
+                     `#[dynamic_config]` type's generated `builder()` says \
+                     it from the declaration; a configuration with no \
+                     declaration says it with `.secrets([..])` — the Python \
+                     binding spells that `DynamicConfig(..., secrets=[..])`. \
+                     Or ask for `CacheMode::Full`, which redacts nothing and \
+                     says so",
                 ));
             }
         }
@@ -195,7 +199,8 @@ impl<T: DeserializeOwned> Builder<T> {
         if !matches!(mode, CacheMode::Full) && self.secrets.is_none() {
             crate::log::warning!(
                 "{}: not writing the cache at {path}: a redaction-dependent \
-                 mode needs the generated builder's secret knowledge",
+                 mode needs to know which fields are secret, and nothing \
+                 has said — declare them, or pass them to `.secrets([..])`",
                 self.key
             );
 

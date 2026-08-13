@@ -335,6 +335,22 @@ The section key *inside* those files is the application name: what is
 served as `billing` is the `[billing]` table. One fact rather than two,
 and it keeps a URL and a file readable against each other.
 
+A file that carries no such header — one another tool writes, whose whole
+contents are the configuration — is read by saying so on that section:
+
+```toml
+[[server.sections]]
+application = "billing"
+profile = "prod"
+files = ["/etc/config/billing.json"]   # {"host": "…", "port": 8080}
+whole_document = true
+```
+
+Per section, because two sections may read files of different shapes.
+Everything downstream is unchanged — the environment prefix, the watcher,
+`/paths`, `/explain` and the audit log. See
+[Document Shape](document-shape.md).
+
 Unknown keys in this file are refused rather than ignored. A misspelled
 key in a security-relevant file is a key the operator believes is doing
 something.

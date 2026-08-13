@@ -224,4 +224,23 @@ compile time. Both shapes can coexist in one process — a typed
 what it hosts — and `Snapshot::sub(path)` hands a subsystem its own
 sub-tree either way.
 
+## In Python
+
+The same idea, spelled `Values`:
+
+```python
+from dynamic_config import DynamicConfig, Values
+
+config = DynamicConfig(Values, key="plugins").file("plugins.toml")
+config.init()
+
+config.current()["cache.ttl"]
+```
+
+It is a `Mapping` read by dotted path, and it gives up the same two
+things this chapter's Rust half does — a field list for `check()` to
+compare against, and a declaration of which paths are secret. See
+[`Values`: a configuration with no
+schema](python/types.md#values-a-configuration-with-no-schema).
+
 [`Value`]: https://docs.rs/dynamic-config/latest/dynamic_config/enum.Value.html

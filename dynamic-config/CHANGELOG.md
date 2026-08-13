@@ -25,24 +25,6 @@ bumps the patch. A change to the minimum supported Rust version is breaking.
 
 ## [Unreleased]
 
-### Fixed
-
-- **`clear_remote()` no longer ends a running watch.** Clearing the fetched
-  document bumped the same counter a source replacement bumps, so every
-  `RemoteSink` taken before the call went permanently stale: the store had
-  not changed and the stream was still delivering, but the next push was
-  refused for belonging to a source that had been "replaced" — which is how
-  a watch loop is told to stop. The two events are counted apart now, one
-  number for source identity and one for the document epoch, so a `clear`
-  still discards a fetch that was in flight and leaves the watch alone.
-- **A fetch that lands after its source was replaced no longer reports on
-  the replacement.** The document was fenced and the status was not, so an
-  old fetch's success marked the new store as fetched and healthy — one
-  nothing had yet spoken to — and an old failure marked it as down. Both
-  status updates now happen under the same generation check as the document
-  commit, and inside the one lock that reads it rather than as a check
-  followed by a write.
-
 ## [0.6.0] — 2026-08-13
 
 ### Added
@@ -327,6 +309,35 @@ bumps the patch. A change to the minimum supported Rust version is breaking.
   version-matched `iai-callgrind-runner`, and CONTRIBUTING.md covers both,
   including building valgrind without root.
 
+- **`whole_document()`: read a document that has no section header.** The
+  default layout is one file, several sections — every top-level key names
+  one, which is what lets a `config.toml` hold `[db]` and `[server]` for two
+  types that know nothing about each other. A file that is *only* one
+  configuration has no use for that header, and a file this crate did not
+  write may have none to give: a container image's
+  `{"host": "0.0.0.0", "port": 8000}`, a chart's rendered values, a file
+  another tool owns.
+
+  The key keeps every other job it has — the environment prefix is still
+  `{prefix}{KEY}_`, the cache entry and the diagnostics are still named
+  after it — and it applies to every document the load reads, files,
+  discovered files, profile variants and a remote store's document alike,
+  because sources that disagreed about their own shape would be a
+  configuration nobody could reason about. `LoadSpec::with_whole_document`
+  is the same switch for the macro-free API.
+
+  A configuration with nothing to call itself may now pass an empty key,
+  and the environment layer is then the prefix alone: `APP_PORT` rather
+  than `APP__PORT`.
+
+  The book's [Document Shape](https://ctolon.github.io/dynamic-config/document-shape.html)
+  chapter is the whole story, with the three neighbouring questions it turned out nothing answered in one place: a key
+  the file has and the type does not name (ignored by the load, reported by
+  `check`, refused by `deny_unknown_fields`), two files holding half a
+  struct each (they merge; later files win), and a field no source supplies
+  (`ErrorKind::Missing`, naming the field). Every answer has a test in
+  `tests/document_shape.rs` and a runnable `document_shape` example.
+
 ### Changed
 
 - **`ConfigCell::store_with` returns the `Arc<T>` it installed** rather than
@@ -367,6 +378,17 @@ bumps the patch. A change to the minimum supported Rust version is breaking.
   "do not recover", which is the conservative direction: a start that would
   have reported "nothing moved" now reports that the values differ.
 
+- **The refusal a redaction-dependent cache earns now names every way to
+  fix it.** It said only that the generated `builder()` knows which
+  fields are secret, which stopped being the whole truth when
+  `Builder::secrets` landed — and was never true for a language binding.
+  It now names the declaration, `.secrets([..])`, the Python spelling of
+  that, and `CacheMode::Full`.
+- **The refusal a bare document earns now names the fix.** "top-level key
+  `host` is not a table" is only obvious to somebody who already knows this
+  crate's layout; it now goes on to say to read the file with
+  `.whole_document()`.
+
 ### Fixed
 
 - **The failure counter no longer uses a method nightly has deprecated.**
@@ -394,6 +416,22 @@ bumps the patch. A change to the minimum supported Rust version is breaking.
   every call, and no defined order between calls — and point a hook that
   needs a total order at `generation()`. The behaviour has not changed;
   reloads are still not serialised, on purpose.
+
+- **`clear_remote()` no longer ends a running watch.** Clearing the fetched
+  document bumped the same counter a source replacement bumps, so every
+  `RemoteSink` taken before the call went permanently stale: the store had
+  not changed and the stream was still delivering, but the next push was
+  refused for belonging to a source that had been "replaced" — which is how
+  a watch loop is told to stop. The two events are counted apart now, one
+  number for source identity and one for the document epoch, so a `clear`
+  still discards a fetch that was in flight and leaves the watch alone.
+- **A fetch that lands after its source was replaced no longer reports on
+  the replacement.** The document was fenced and the status was not, so an
+  old fetch's success marked the new store as fetched and healthy — one
+  nothing had yet spoken to — and an old failure marked it as down. Both
+  status updates now happen under the same generation check as the document
+  commit, and inside the one lock that reads it rather than as a check
+  followed by a write.
 
 ### Security
 

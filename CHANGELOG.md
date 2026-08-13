@@ -25,22 +25,6 @@ bumps the patch. A change to the minimum supported Rust version is breaking.
 
 ## [Unreleased]
 
-### Fixed
-
-- **The engine**: `clear_remote()` no longer ends a running watch, and a
-  fetch that lands after its source was replaced no longer reports on the
-  replacement's health. See `dynamic-config/CHANGELOG.md`.
-- **The config server**: a response can no longer carry the previous
-  document under the new generation; a stream resumed from a previous
-  process is no longer left silent; SIGTERM is handled; shutdown is
-  bounded; a TLS connection has a deadline after the handshake; a section
-  no route could reach is refused at startup; and on the client side a
-  password in the URL reaches no diagnostic, while the fetch deadline now
-  covers the response body. See `dynamic-config-server/CHANGELOG.md`.
-- **The git store**: a credential in the URL no longer reaches `Builder`'s
-  `Debug`, and one working directory can no longer be claimed twice under
-  two spellings. See `dynamic-config-git/CHANGELOG.md`.
-
 ## [0.6.0] — 2026-08-13
 
 ### Added
@@ -482,6 +466,30 @@ bumps the patch. A change to the minimum supported Rust version is breaking.
   CONTRIBUTING.md has the procedure, and now also how to build valgrind
   into a prefix without root.
 
+- **A document need not be sectioned.** `whole_document()` — on the Rust
+  builder, on the Python configuration and its decorator, and as
+  `whole_document = true` on a config-server section — reads a file whose
+  whole contents are the configuration: `{"host": "0.0.0.0", "port": 8000}`
+  with no header above it. The key goes on naming the environment prefix,
+  the cache entry and the diagnostics.
+
+  The book gained a [Document Shape] chapter for it and for the three
+  questions beside it that nothing answered in one place: a key the file
+  has and the type does not name, two files holding half a struct each, and
+  a field no source supplies. Every answer has a test and a runnable
+  example — `document_shape` in Rust, `19_document_shape.py` in Python.
+
+- **Python: a configuration with no schema class.** `Values` is the
+  binding's `Dynamic<Value>` — pass it where a model goes and reads are
+  by dotted path. It reports what it cannot know rather than assuming it:
+  `Report.unknown_checked` is `False` with no field list, and a redacting
+  cache is refused until `secrets=` names the paths. See
+  `dynamic-config-python/CHANGELOG.md`.
+- **Python: every compiled method documents its parameters.** The
+  extension's methods carried no docstrings at all, so `help()` showed a
+  signature and nothing else; the decorator's arguments are now listed
+  one per row with the fluent call each stands for.
+
 ### Changed
 
 - **A new internal crate, `dynamic-config-store-core`, holds what the
@@ -533,6 +541,22 @@ bumps the patch. A change to the minimum supported Rust version is breaking.
 
 - **The concurrent-writer contract on `on_reload` is documented** rather
   than living in a comment, and is pinned by a test.
+
+- **The engine**: `clear_remote()` no longer ends a running watch, and a
+  fetch that lands after its source was replaced no longer reports on the
+  replacement's health. See `dynamic-config/CHANGELOG.md`.
+- **The config server**: a response can no longer carry the previous
+  document under the new generation; a stream resumed from a previous
+  process is no longer left silent; SIGTERM is handled; shutdown is
+  bounded; a TLS connection has a deadline after the handshake; a section
+  no route could reach is refused at startup; and on the client side a
+  password in the URL reaches no diagnostic, while the fetch deadline now
+  covers the response body. See `dynamic-config-server/CHANGELOG.md`.
+- **The git store**: a credential in the URL no longer reaches `Builder`'s
+  `Debug`, and one working directory can no longer be claimed twice under
+  two spellings. See `dynamic-config-git/CHANGELOG.md`.
+
+[Document Shape]: https://ctolon.github.io/dynamic-config/document-shape.html
 
 ### Security
 

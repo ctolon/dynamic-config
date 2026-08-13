@@ -416,6 +416,10 @@ impl Server {
 fn load_section(described: &SectionConfig, debounce: Duration) -> Result<Section, StartupError> {
     let mut builder = Builder::<Document>::new(described.application.as_str());
 
+    if described.whole_document {
+        builder = builder.whole_document();
+    }
+
     for file in &described.files {
         builder = builder.file(file.as_str());
     }

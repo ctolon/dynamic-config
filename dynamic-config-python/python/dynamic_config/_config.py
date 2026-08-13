@@ -38,7 +38,7 @@ from ._errors import NotInitialisedError
 from ._executor import default_executor
 from ._lifetime import _LIVE_CONFIGS, HookGuard, Watch, _register
 from ._remote import RemoteSource
-from ._schema import schema_for
+from ._schema import is_values_type, schema_for
 from ._settings import (
     _SETTINGS_SOURCING,
     _as_paths,
@@ -88,23 +88,40 @@ class DynamicConfig(Generic[M]):
         key: str,
         *,
         executor: Executor | None = None,
+        secrets: Sequence[str] = (),
     ) -> None:
         """Builds a configuration for ``model`` under the section ``key``.
 
-        Nothing is read here: sources are chosen with the fluent methods
-        and take effect at the first load. ``executor`` chooses which
-        thread pool pays for the blocking half of the ``_async`` calls;
-        ``None`` follows :func:`set_executor`.
+        Parameters:
+            model: the class this configuration resolves to — a Pydantic
+                model, a plain `dataclasses.dataclass`, or
+                :class:`~dynamic_config.Values` for a configuration with
+                no schema at all. Anything else is a `TypeError` here,
+                where the mistake is on screen.
+            key: the section key. Every file's top-level keys are
+                sections, so this is which one is yours; it also names
+                the environment prefix (``env("APP_")`` reads
+                ``APP_{KEY}_*``), the cache entry and every diagnostic.
+                Pass ``""`` for a configuration with nothing to call
+                itself, alongside :meth:`whole_document`.
+            executor: which thread pool pays for the blocking half of the
+                ``_async`` calls. ``None`` — the default — follows
+                :func:`~dynamic_config.set_executor`, which in turn
+                follows the running loop's own.
+            secrets: dotted paths whose values must never reach a
+                diagnostic, for a schemaless configuration. A declared
+                model already says which of its fields are secret —
+                `SecretStr`, or ``field(metadata={"secret": True})`` —
+                and these are **added** to that rather than replacing it.
 
-        The secret list and the field names are derived from the model
-        itself — nobody keeps a second list of which fields are sensitive
-        in step with the first.
+        Nothing is read here: sources are chosen with the fluent methods
+        and take effect at the first load.
         """
         # Whatever kind of schema this is — a Pydantic model, a plain
         # dataclass — the adapter answers the same three questions and
         # nothing below here knows the difference. A class this package
         # cannot read is refused right at the door.
-        schema = schema_for(model)
+        schema = schema_for(model, secrets)
 
         # A settings class that declares where to read from would get none
         # of it here: `model_validate` does not run pydantic-settings'
@@ -138,10 +155,18 @@ class DynamicConfig(Generic[M]):
         # means "the loop's own" unless somebody said otherwise.
         self._executor = executor
         self._schema = schema
+        # A declared model's own secret fields, plus whatever the caller
+        # named — and `None` when nobody could say. An empty list is the
+        # knowledge that there are no secrets; a schemaless configuration
+        # that named none has no such knowledge, and the engine goes on
+        # refusing a redacting cache until `secrets=` supplies it.
+        secret_paths = sorted({*schema.secret_paths(), *secrets})
+        known = secret_paths if secret_paths or not is_values_type(model) else None
+
         self._core = _core.Config(
             schema.validate,
             key,
-            schema.secret_paths(),
+            known,
             schema.field_names(),
         )
 
@@ -287,22 +312,56 @@ class DynamicConfig(Generic[M]):
         return self._model
 
     def file(self, path: str) -> DynamicConfig[M]:
-        """Adds a configuration file. Merged in call order; later wins."""
+        """Adds a configuration file. Merged in call order; later wins.
+
+        Parameters:
+            path: the file to read. The format comes from the extension —
+                ``.json``, ``.toml``, ``.yaml``/``.yml`` — and a file
+                that is not there is skipped, which is what makes an
+                optional secrets file work.
+        """
         self._core.file(str(path))
         return self
 
     def discover(self, name: str, paths: Iterable[str]) -> DynamicConfig[M]:
-        """Looks for ``{name}.{ext}`` in each directory, below listed files."""
+        """Looks for ``{name}.{ext}`` in each directory.
+
+        Every directory that has a match contributes one layer, so the
+        search order *is* the layering order — and all of them sit below
+        anything :meth:`file` listed, because a listed file is a
+        deliberate statement and a search result is a guess about the
+        machine.
+
+        Parameters:
+            name: the stem to look for. ``config`` finds ``config.toml``,
+                ``config.json`` or ``config.yaml``.
+            paths: the directories to look in, in order.
+        """
         self._core.discover(name, [str(path) for path in paths])
         return self
 
     def env(self, prefix: str) -> DynamicConfig[M]:
-        """The environment layer: ``prefix`` plus the section key."""
+        """The environment layer, read above every file.
+
+        Parameters:
+            prefix: the variable prefix, trailing underscore included.
+                It combines with the section key, so ``env("APP_")`` on a
+                ``db`` configuration reads ``APP_DB_*``; with ``key=""``
+                it is the prefix alone.
+        """
         self._core.env(prefix)
         return self
 
     def nest(self, separator: str) -> DynamicConfig[M]:
-        """The nesting separator inside variable names; ``__`` unless said."""
+        """The separator that means nesting inside a variable name.
+
+        Parameters:
+            separator: what introduces one level. ``__`` unless given, so
+                ``APP_DB_POOL__MAX_SIZE`` is ``pool.max_size``. A single
+                separator cannot mean both "word break" and "nesting", so
+                whatever this is must be something a field name will not
+                contain. Meaningful only alongside :meth:`env`.
+        """
         self._core.nest(separator)
         return self
 
@@ -314,6 +373,31 @@ class DynamicConfig(Generic[M]):
     def strict_env(self) -> DynamicConfig[M]:
         """Refuses ambiguous environment spellings — ``off``, ``no``, ``nil``."""
         self._core.strict_env()
+        return self
+
+    def whole_document(self) -> DynamicConfig[M]:
+        """Reads each document as this model's values, with no section header.
+
+        The default is one file, several sections: every top-level key
+        names one, and this configuration's key says which is yours —
+        which is what lets a ``config.toml`` carry ``[db]`` and
+        ``[server]`` for two models that know nothing about each other.
+
+        Say this when the document is *only* this configuration::
+
+            {"host": "0.0.0.0", "port": 8000}
+
+            Server.config.whole_document().file("server.json").init()
+
+        The key keeps its other jobs — ``APP_SERVER_PORT`` still reaches
+        ``port``, the cache entry and the diagnostics are still named
+        after it — and ``key=""`` is allowed for a configuration with
+        nothing to call itself, whose environment layer is then just the
+        prefix (``APP_PORT``). It applies to every document this
+        configuration reads: files, discovered files, profile variants and
+        a remote store's document alike.
+        """
+        self._core.whole_document()
         return self
 
     def env_file(self, path: str) -> DynamicConfig[M]:
@@ -343,15 +427,38 @@ class DynamicConfig(Generic[M]):
         return self
 
     def profile_env(self, variable: str) -> DynamicConfig[M]:
-        """The environment variable naming the active profile."""
+        """The environment variable naming the active profile.
+
+        Parameters:
+            variable: the variable to read, e.g. ``APP_ENV``. Set to
+                ``production``, every file gains a sibling layer —
+                ``config.toml`` then ``config.production.toml`` — and a
+                variant that does not exist is skipped. A profile has to
+                be a plain word: one with a path separator in it is
+                refused rather than followed.
+        """
         self._core.profile_env(variable)
         return self
 
     def cache(self, path: str, mode: str = "redacted") -> DynamicConfig[M]:
         """A last-known-good cache, written after every clean load.
 
-        ``mode`` is ``redacted`` (the default — secrets stay out),
-        ``full`` or ``fingerprint``.
+        Read when the sources will not load, so a restart during an
+        outage starts from what worked rather than not at all.
+
+        Parameters:
+            path: where to write it. The format comes from the extension.
+            mode: ``"redacted"`` — every secret path dropped, the usual
+                choice — or ``"full"``, which writes the secrets too and
+                is a file to protect accordingly, or ``"fingerprint"``,
+                which stores no values at all and only reports whether
+                the configuration changed. Anything else is a
+                `ValueError` naming the three.
+
+        A redacting mode has to know which paths are secret. A declared
+        model says so; a :class:`~dynamic_config.Values` configuration
+        says so with ``DynamicConfig(..., secrets=[...])``, and without
+        it the cache is refused rather than written unredacted.
         """
         self._core.cache(str(path), mode)
         return self
@@ -551,9 +658,15 @@ class DynamicConfig(Generic[M]):
     ) -> Watch:
         """Reloads on file changes until the returned handle is stopped.
 
-        ``poll_interval`` chooses polling over the platform's notification
-        backend — what network and overlay filesystems need, where
-        notifications register successfully and then never fire.
+        Parameters:
+            debounce: seconds to wait after a change before reloading. An
+                editor's atomic save is several filesystem events, and
+                this is what makes them one reload.
+            poll_interval: seconds between polls, which chooses polling
+                over the platform's notification backend — what network
+                and overlay filesystems need, where notifications
+                register successfully and then never fire. ``None`` uses
+                the platform's own event API.
 
         Starting a watcher is short, but it is not free — see
         :meth:`watch_async` for what it costs and when that matters.
@@ -675,6 +788,10 @@ class DynamicConfig(Generic[M]):
 
         For threads. On an event loop, await :meth:`changed_async` or
         iterate :meth:`changes`.
+
+        Parameters:
+            timeout: seconds to wait at most, or ``None`` to wait
+                forever. Answers `None` when it elapses first.
         """
         result = self._core.wait_for_change(self._core.generation, timeout)
 
@@ -752,20 +869,53 @@ class DynamicConfig(Generic[M]):
     # ── Runtime layers ─────────────────────────────────────────────────
 
     def set_default(self, path: str, value: Any) -> None:
-        """A fallback the program computes and a file need not state."""
+        """A fallback the program computes and a file need not state.
+
+        The bottom layer: consulted only when nothing else supplies the
+        key. Takes effect on the next load.
+
+        Parameters:
+            path: the dotted path to set, e.g. ``pool.max_size``.
+            value: any JSON-shaped value — `str`, `int`, `float`, `bool`,
+                `None`, `list` or `dict` of those.
+        """
         self._core.set_default(path, value)
 
     def set_defaults(self, values: Mapping[str, Any] | Any) -> None:
-        """Every field of a mapping (or model) as defaults, at once."""
+        """Every field of a mapping (or model) as defaults, at once.
+
+        How a hand-written ``Config.default()`` becomes the bottom layer
+        without naming each key.
+
+        Parameters:
+            values: a mapping, or a model instance to read the fields of.
+        """
         self._core.set_defaults(values)
 
     def set_override(self, path: str, value: Any) -> None:
-        """A value that outranks every source — what makes a test authoritative."""
+        """A value that outranks every source, the environment included.
+
+        What makes a test authoritative, and what a ``--set key=value``
+        flag reaches. Takes effect on the next load.
+
+        Parameters:
+            path: the dotted path to pin.
+            value: as :meth:`set_default`.
+        """
         self._core.set_override(path, value)
         self._overrides[path] = value
 
     def set_assignments(self, assignments: Sequence[str]) -> None:
-        """``key=value`` strings, as a ``--set`` flag would supply them."""
+        """``key=value`` strings, as a ``--set`` flag would supply them.
+
+        Above the environment and below the overrides: a flag is more
+        specific than a variable, and less specific than a value the
+        program was told to pin.
+
+        Parameters:
+            assignments: the strings to parse. One with no ``=`` in it is
+                an error naming it.
+        """
         self._core.set_assignments(list(assignments))
 
     def clear_defaults(self) -> None:
@@ -828,25 +978,62 @@ class DynamicConfig(Generic[M]):
             self.reload()
 
     def alias(self, old: str, new: str) -> None:
-        """Keeps files written before a rename working."""
+        """Keeps files written before a rename working.
+
+        Fills a gap rather than overriding: the new path wins wherever it
+        is set, and the old one answers only where it is not.
+
+        Parameters:
+            old: the path deployments still spell.
+            new: the path it means now.
+        """
         self._core.alias(old, new)
 
     def bind_env(self, path: str, variable: str) -> None:
-        """Maps one field to one variable by name — ``PORT``, ``DATABASE_URL``."""
+        """Maps one field to one variable by name.
+
+        For the variable a platform chose and a prefix cannot reach —
+        ``PORT``, ``DATABASE_URL``. Sits just above the prefixed
+        environment layer, because naming a variable is the more specific
+        statement.
+
+        Parameters:
+            path: the dotted path to fill.
+            variable: the environment variable to read it from.
+        """
         self._core.bind_env(path, variable)
 
     # ── Diagnostics ────────────────────────────────────────────────────
 
     def source_of(self, path: str) -> Origin | None:
-        """Where the value at ``path`` would come from on the next load."""
+        """Where the value at ``path`` would come from on the next load.
+
+        Re-reads the sources rather than reporting the installed
+        snapshot, so it answers before the first load and after a failed
+        one.
+
+        Parameters:
+            path: the dotted path to trace.
+        """
         return Origin._of(self._core.source_of(path))
 
     def is_set(self, path: str) -> bool:
-        """Whether anything supplies ``path``."""
+        """Whether anything supplies ``path``.
+
+        Parameters:
+            path: the dotted path to look for.
+        """
         return bool(self._core.is_set(path))
 
     def explain(self, path: str) -> Explanation:
-        """Every layer's answer for ``path``, not just the winner's."""
+        """Every layer's answer for ``path``, not just the winner's.
+
+        The one diagnostic that carries values, and the one that redacts:
+        a path this configuration knows to be secret renders as ``***``.
+
+        Parameters:
+            path: the dotted path to explain.
+        """
         raw = self._core.explain(path)
 
         return Explanation(
@@ -885,6 +1072,7 @@ class DynamicConfig(Generic[M]):
                 for item in raw["unknown"]
             ),
             failure=raw["failure"],
+            unknown_checked=raw["unknown_checked"],
         )
 
     def snapshot(self) -> Snapshot:

@@ -113,6 +113,7 @@ with an error saying to start from the generated `builder()`.
 | `nest(separator)` | The nesting separator inside variable names; `"__"` unless said. |
 | `allow_empty_env()` | Treats `FOO=` as set-to-empty rather than unset. |
 | `strict_env()` | Refuses ambiguous environment spellings — `off`, `no`, `nil` — with an error naming the variable. |
+| `whole_document()` | Reads every document as this section's values, with no section header: `{"host": …, "port": …}` and nothing above it. The key still names the environment prefix, the cache entry and the diagnostics. See [Document Shape](document-shape.md). |
 | `env_file(path)` | A `.env` file read as the environment layer, just below the real thing. Needs the `dotenv` feature at load time. |
 | `secrets_dir(path)` | A directory where each file is one key — how Docker and Kubernetes mount secrets. One level, nesting spelled in the filename with the [`nest`](sources-and-precedence.md#nest) separator, one trailing newline trimmed, and provenance naming the individual file. Sits above the files and the remote store, below `.env`. See [`secrets_dir`](sources-and-precedence.md#secrets_dir). |
 | `profile_env(variable)` | The environment variable naming the active profile, as in `profile_env("APP_ENV")`. |
