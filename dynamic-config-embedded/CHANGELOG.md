@@ -25,6 +25,8 @@ bumps the patch. A change to the minimum supported Rust version is breaking.
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-08-13
+
 ### Added
 
 - `ConfigCell::waiter_evictions()` (feature `async`): a saturating count of
@@ -109,7 +111,8 @@ Initial release.
 - The `Validate` trait, and `Error`/`ErrorKind` small enough for a status
   register.
 
-[Unreleased]: https://github.com/ctolon/dynamic-config/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/ctolon/dynamic-config/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/ctolon/dynamic-config/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/ctolon/dynamic-config/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/ctolon/dynamic-config/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/ctolon/dynamic-config/compare/v0.2.0...v0.3.0
