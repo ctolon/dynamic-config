@@ -18,7 +18,9 @@ cheap enough to take on every scrape — and it is the same contract the
 Rust [`telemetry`](../telemetry.md) feature makes, through the same
 engine.
 
-## `config.status()` → `ConfigStatus`
+## `ConfigStatus`
+
+What `config.status()` hands back.
 
 | Field | Type | Means |
 |---|---|---|
@@ -34,7 +36,9 @@ service's configuration has been stale for an hour* is the page that
 matters, and a failing reload leaves the previous model serving — so
 staleness is what says so, not an outage.
 
-## `config.remote_status()` → `RemoteStatus`
+## `RemoteStatus`
+
+What `config.remote_status()` hands back.
 
 | Field | Type | Means |
 |---|---|---|

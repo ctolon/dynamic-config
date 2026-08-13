@@ -362,6 +362,15 @@ pub(super) struct Layout<'a> {
     /// `Some(key)` when the documents carry no section header, and all of
     /// each one is `key`'s values; `None` for the default, where every
     /// top-level key names a section.
+    ///
+    /// Read by [`Sections`], which is the one thing that reads a document —
+    /// and which is compiled out entirely when no format feature is on. A
+    /// build with no parser still *carries* the layout, because every merge
+    /// signature takes one; there is simply nothing left to apply it to.
+    #[cfg_attr(
+        not(any(feature = "json", feature = "toml", feature = "yaml")),
+        allow(dead_code)
+    )]
     whole: Option<&'a str>,
 }
 

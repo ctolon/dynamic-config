@@ -231,7 +231,7 @@ The binding's schema surface is an adapter — `validate`, `field_names`,
 `secret_paths`, `is_instance` — and there are four implementations of it
 already: Pydantic, a Pydantic dataclass, a plain `dataclasses.dataclass`,
 and `Values`, which is no schema at all.
-[msgspec](https://jcristharif.com/msgspec/) is the obvious fifth: a
+[msgspec](https://github.com/jcrist/msgspec) is the obvious fifth: a
 `msgspec.Struct` is a declaration in the same shape as the other two typed
 ones, it validates on decode, and it is markedly faster than Pydantic at
 exactly the thing this engine asks a schema to do — turn one resolved

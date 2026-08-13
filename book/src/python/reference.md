@@ -20,7 +20,7 @@ model rather than `Any`.
 | `model` | required | the schema class: a `dataclasses.dataclass`, a Pydantic model, a Pydantic dataclass — see [What a schema may be](types.md#what-a-schema-may-be) — or [`Values`](#values), which is no schema at all |
 | `key` | required | the section this configuration reads (`[db]` in a TOML file). It also names the environment prefix, the cache entry and every diagnostic; `""` is a configuration with nothing to call itself, which goes with `whole_document()` |
 | `executor` | `None` | which pool runs the blocking half of the async calls; `None` follows [`set_executor`](#set_executorexecutor) |
-| `secrets` | `()` | dotted paths whose values must never reach a diagnostic. A declared model already says which of its fields are secret and these are *added* to that; for a `Values` configuration they are the only such statement, and the [cache](#last-known-good-cache) modes that redact are refused without them |
+| `secrets` | `()` | dotted paths whose values must never reach a diagnostic. A declared model already says which of its fields are secret and these are *added* to that; for a `Values` configuration they are the only such statement, and the `cache(path, mode)` modes that redact are refused without them |
 
 ### `DynamicConfig.from_settings(model, key, *, executor=None)`
 
@@ -178,8 +178,8 @@ is the whole reason it exists: it reloads on entry and again on exit.
 
 | Method | Returns |
 |---|---|
-| `status()` | [`ConfigStatus`](telemetry.md#configstatus-configstatus) — generation, staleness, the last reason, the failure streak |
-| `remote_status()` | [`RemoteStatus`](telemetry.md#configremote_status-remotestatus) — fetches, staleness, `reachable`, the failure streak |
+| `status()` | [`ConfigStatus`](telemetry.md#configstatus) — generation, staleness, the last reason, the failure streak |
+| `remote_status()` | [`RemoteStatus`](telemetry.md#remotestatus) — fetches, staleness, `reachable`, the failure streak |
 
 Both are a handful of atomic loads: no source is re-read and nothing
 blocks, which is what makes them cheap enough for a scrape. `Exposition`
