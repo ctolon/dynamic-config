@@ -268,6 +268,25 @@ impl ServerConfig {
         let mut seen = Vec::new();
 
         for section in &self.sections {
+            // The predicate the handlers apply to the path segments, applied
+            // where the mistake was made. Without this a section named with
+            // a space in it — or one 65 characters long — loads, starts, and
+            // reports ready, while every request for it is refused by
+            // `is_name` before the section map is even consulted: a section
+            // that exists and can never be reached.
+            for (part, value) in [
+                ("application", &section.application),
+                ("profile", &section.profile),
+            ] {
+                if !crate::routes::is_name(value) {
+                    return Err(Refusal::UnroutableSection {
+                        application: section.application.clone(),
+                        profile: section.profile.clone(),
+                        part,
+                    });
+                }
+            }
+
             let pair = (section.application.as_str(), section.profile.as_str());
 
             if seen.contains(&pair) {
@@ -443,6 +462,16 @@ pub enum Refusal {
         /// The profile both claim.
         profile: String,
     },
+    /// A section names an application or profile no route can carry, so
+    /// nothing could ever reach it.
+    UnroutableSection {
+        /// The application, as configured.
+        application: String,
+        /// The profile, as configured.
+        profile: String,
+        /// Which of the two was refused: `application` or `profile`.
+        part: &'static str,
+    },
     /// Two clients share a name.
     DuplicateClient {
         /// The name.
@@ -513,6 +542,17 @@ impl fmt::Display for Refusal {
                 f,
                 "two `sections` claim `{application}`/`{profile}`; one application and \
                  profile is served by exactly one section"
+            ),
+            Self::UnroutableSection {
+                application,
+                profile,
+                part,
+            } => write!(
+                f,
+                "the section `{application}`/`{profile}` has a `{part}` no request can \
+                 name: a path segment is up to 64 characters, starts with a letter or a \
+                 digit, and carries only letters, digits, `.`, `_` and `-`. The server \
+                 would start, report ready and answer `404` for that section forever"
             ),
             Self::DuplicateClient { name } => {
                 write!(f, "two `clients` are named `{name}`; names identify a caller in the audit log and must be unique")
@@ -648,6 +688,49 @@ mod tests {
         let mut config = valid();
         config.sections.push(section("billing", "staging"));
         assert_eq!(config.validate(), Ok(()));
+    }
+
+    /// A section whose name no path segment can carry is refused where it
+    /// was written, not answered `404` forever. The predicate is the
+    /// handlers' own, so the two cannot drift.
+    #[test]
+    fn a_section_no_route_could_name_is_refused_at_startup() {
+        for (part, application, profile) in [
+            ("application", "billing api", "prod"),
+            ("profile", "billing", ".hidden"),
+            ("application", "", "prod"),
+            ("profile", "billing", "../etc"),
+        ] {
+            let mut config = valid();
+            config.sections = vec![section(application, profile)];
+            config.clients = vec![client("pod", Some(GOOD), &[application])];
+
+            assert_eq!(
+                config.validate(),
+                Err(Refusal::UnroutableSection {
+                    application: application.to_owned(),
+                    profile: profile.to_owned(),
+                    part,
+                }),
+                "`{application}`/`{profile}` must be refused"
+            );
+        }
+
+        // And the shapes a deployment actually uses still pass.
+        let mut config = valid();
+        config.sections = vec![section("billing-api.v2", "prod_1")];
+        config.clients = vec![client("pod", Some(GOOD), &["billing-api.v2"])];
+        assert_eq!(config.validate(), Ok(()));
+
+        // Sixty-four characters is the ceiling, and it is inclusive.
+        let mut config = valid();
+        let long = "a".repeat(65);
+        config.sections = vec![section(&long, "prod")];
+        config.clients = vec![client("pod", Some(GOOD), &[&long])];
+        assert!(matches!(
+            config.validate(),
+            Err(Refusal::UnroutableSection { .. })
+        ));
     }
 
     #[test]

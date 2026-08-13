@@ -208,11 +208,12 @@ async fn document(
         Err(response) => return *response,
     };
 
-    let Some(document) = admitted.section.current() else {
+    // One coherent pair: the number never describes an install this
+    // document is not already at least at. See `Section::installed`.
+    let Some((generation, document)) = admitted.section.installed() else {
         return unready(&server, &admitted);
     };
 
-    let generation = admitted.section.generation();
     served(&server, &admitted, generation);
 
     Json(DocumentBody {
@@ -246,11 +247,10 @@ async fn paths(
         Err(response) => return *response,
     };
 
-    let Some(document) = admitted.section.current() else {
+    let Some((generation, document)) = admitted.section.installed() else {
         return unready(&server, &admitted);
     };
 
-    let generation = admitted.section.generation();
     served(&server, &admitted, generation);
 
     Json(PathsBody {
@@ -481,11 +481,21 @@ impl Generations {
         match self.sent {
             Some(sent) => generation > sent,
             // The opening event. A client that said where it was gets one
-            // only if the section has moved since; a client that said
-            // nothing gets one either way, so that it starts knowing where
-            // it stands rather than having to guess.
+            // unless the section is exactly where it said; a client that
+            // said nothing gets one either way, so that it starts knowing
+            // where it stands rather than having to guess.
+            //
+            // *Different*, not *greater*. A generation counts installs
+            // since this process started, so a restart puts the section
+            // back at 1 while a reconnecting `EventSource` still sends the
+            // `Last-Event-ID` the previous process gave it. Under a
+            // greater-than test, a client resuming from 50 would be told
+            // nothing by the new process until it had reloaded fifty times
+            // — silently missing every change in between, for the life of
+            // the connection. A number that is not the one the client
+            // holds is news, whichever side of it it falls.
             None => match self.resume {
-                Some(resumed) => generation > resumed,
+                Some(resumed) => generation != resumed,
                 None => true,
             },
         }
@@ -919,7 +929,11 @@ fn not_found() -> Response {
 /// Narrow on purpose. It bounds what can reach the audit log, it rejects
 /// `..` and the empty segment without a special case for either, and there
 /// is no application name anybody wants that it refuses.
-fn is_name(value: &str) -> bool {
+///
+/// `pub(crate)` so that [`ServerConfig::validate`](crate::ServerConfig)
+/// refuses at startup exactly what the handlers refuse at request time: a
+/// section this rejects would load, start and answer nothing.
+pub(crate) fn is_name(value: &str) -> bool {
     let mut characters = value.chars();
 
     characters

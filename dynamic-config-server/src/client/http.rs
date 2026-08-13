@@ -13,12 +13,16 @@
 //!   finite document is a client that can be made to allocate until it dies,
 //!   and the server this talks to is exactly the thing an attacker who has
 //!   got that far would be impersonating.
-//! - **A deadline covers the connect, the TLS handshake and the request.** A
-//!   fetch that hangs is a reload that never happens, and the loop above has
-//!   no other way to notice.
+//! - **One deadline covers the whole attempt** — connect, TLS handshake,
+//!   request *and* body ([`Budget`]). A fetch that hangs is a reload that
+//!   never happens, and the loop above has no other way to notice. A
+//!   deadline per step would be neither: three steps of ten seconds is a
+//!   thirty-second fetch, and a body with no deadline at all is a server
+//!   that answers with headers and then stops writing — which costs an
+//!   attacker one socket and costs the client every reload after it.
 
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 use dynamic_config::Error;
@@ -143,6 +147,32 @@ fn split_authority(authority: &str, secure: bool) -> Option<(String, u16)> {
     }
 }
 
+/// What is left of one fetch's deadline.
+///
+/// A fetch is four waits — connect, handshake, request, body — and the
+/// promise `with_timeout` makes is about the fetch, not about each of them.
+/// So the budget is started once and every step is bounded by what remains:
+/// a slow connect leaves the body less time rather than adding to the total.
+///
+/// A budget that has run out yields `Duration::ZERO`, which times out
+/// immediately and reports as the step that had nothing left.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct Budget {
+    until: Instant,
+}
+
+impl Budget {
+    pub(super) fn starting(timeout: Duration) -> Self {
+        Self {
+            until: Instant::now() + timeout,
+        }
+    }
+
+    pub(super) fn left(self) -> Duration {
+        self.until.saturating_duration_since(Instant::now())
+    }
+}
+
 /// One open connection, and the task driving it.
 ///
 /// hyper's client connection is two halves: a `SendRequest` the caller holds
@@ -166,18 +196,18 @@ impl Connection {
     /// # Errors
     ///
     /// If the address will not resolve, the connection is refused, the TLS
-    /// handshake fails, or any of it outlives `timeout`. **No message here
+    /// handshake fails, or any of it outlives what `budget` has left. **No message here
     /// carries certificate or key material**: a handshake failure is
     /// rustls's own sentence, which names the certificate's problem and not
     /// its contents.
     pub(super) async fn open(
         endpoint: &Endpoint,
         tls: Option<&Arc<rustls::ClientConfig>>,
-        timeout: Duration,
+        budget: Budget,
         described: &str,
     ) -> Result<Self, Error> {
         let stream = deadline(
-            timeout,
+            budget.left(),
             TcpStream::connect((endpoint.host.as_str(), endpoint.port)),
             described,
             "connecting",
@@ -202,7 +232,7 @@ impl Connection {
             ))
         })?;
         let stream = deadline(
-            timeout,
+            budget.left(),
             TlsConnector::from(Arc::clone(config)).connect(name, stream),
             described,
             "the TLS handshake",
@@ -246,7 +276,7 @@ impl Connection {
         path: &str,
         token: Option<&str>,
         accept: &str,
-        timeout: Duration,
+        budget: Budget,
         described: &str,
     ) -> Result<Response<Incoming>, Error> {
         let mut request = Request::builder()
@@ -271,7 +301,7 @@ impl Connection {
         })?;
 
         deadline(
-            timeout,
+            budget.left(),
             self.sender.send_request(request),
             described,
             "the request",
@@ -281,25 +311,36 @@ impl Connection {
     }
 }
 
-/// The whole body, refused past `limit`.
+/// The whole body, refused past `limit` and past what `budget` has left.
+///
+/// The deadline is the half that is easy to miss: a server that sends
+/// headers and then stops writing holds this future open for as long as it
+/// likes, and the bound on *size* never comes into it because the bytes
+/// never arrive.
 ///
 /// # Errors
 ///
-/// If the body cannot be read or is longer than `limit`.
+/// If the body cannot be read, is longer than `limit`, or does not arrive
+/// within what the fetch has left.
 pub(super) async fn body(
     response: Response<Incoming>,
     limit: usize,
+    budget: Budget,
     described: &str,
 ) -> Result<Vec<u8>, Error> {
-    let collected = Limited::new(response.into_body(), limit)
-        .collect()
-        .await
-        .map_err(|_| {
-            Error::remote(format!(
-                "{described}: the response body could not be read, or was longer than \
+    let collected = deadline(
+        budget.left(),
+        Limited::new(response.into_body(), limit).collect(),
+        described,
+        "the response body",
+    )
+    .await?
+    .map_err(|_| {
+        Error::remote(format!(
+            "{described}: the response body could not be read, or was longer than \
                  {limit} bytes"
-            ))
-        })?;
+        ))
+    })?;
 
     Ok(collected.to_bytes().to_vec())
 }

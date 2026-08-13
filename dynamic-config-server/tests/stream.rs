@@ -260,6 +260,38 @@ async fn an_unparsable_last_event_id_is_ignored_rather_than_refused() {
     assert!(subscription.event().await.contains(r#""generation":1"#));
 }
 
+/// A generation counts installs *since this process started*, so a restart
+/// puts every section back at 1 while a reconnecting `EventSource` still
+/// sends the id the previous process handed it. That id is higher than
+/// anything the new process will emit for a long time, and a
+/// greater-than test would open silent and stay silent — the client
+/// missing every change until the new process had reloaded past the old
+/// number, which for a long-lived id is the rest of the connection's life.
+///
+/// A resumed generation the section is not at is news, whichever side of
+/// it it falls on.
+#[tokio::test]
+async fn a_client_resuming_from_a_previous_process_is_not_left_silent() {
+    let fixture = fixture();
+
+    // What a client would hold from a server that had been up for a while.
+    // This fixture is a fresh process: its sections are at generation 1.
+    let mut subscription = subscribe(
+        &fixture,
+        "/billing/prod/stream",
+        Some(common::BILLING_TOKEN),
+        Some(50),
+    )
+    .await;
+
+    let event = subscription.event().await;
+    assert!(
+        event.contains(r#""generation":1"#),
+        "a restarted server must tell a resuming client where it actually \
+         is: {event}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // It is an endpoint like every other one
 // ---------------------------------------------------------------------------

@@ -3,24 +3,30 @@
 //! # Why this is fifty lines here rather than a dependency
 //!
 //! `axum-server` is the usual shape and was rejected. The accept loop is the
-//! part of a TLS server where the three decisions that matter are made, and
-//! all three are this crate's to make:
+//! part of a TLS server where the decisions that matter are made, and all of
+//! them are this crate's to make:
 //!
 //! - **A failed handshake must cost one connection, never the listener.**
 //!   With client certificates required, failed handshakes are *normal
 //!   traffic* — every port scanner and every health checker that does not
 //!   know about the certificate produces one.
-//! - **A handshake must not be able to hold a slot forever.** A client that
+//! - **A connection must not be able to hold a slot forever.** A client that
 //!   opens a socket and sends nothing is free for the client and not free
 //!   for the server, so the handshake has a deadline
-//!   ([`HANDSHAKE_TIMEOUT`]).
+//!   ([`HANDSHAKE_TIMEOUT`]) — and so do the request headers after it
+//!   ([`HEADER_TIMEOUT`]), because a client that completes a handshake and
+//!   then goes quiet costs exactly as much as one that never handshook.
+//! - **Shutdown must end.** One endpoint here answers with a body that
+//!   never ends, so a drain that waits for every response body waits for
+//!   every subscriber to leave; [`DRAIN_TIMEOUT`](crate::DRAIN_TIMEOUT) is what keeps a rollout
+//!   from hanging on its own change stream.
 //! - **A refused handshake must be recorded, and recorded saying nothing.**
 //!   It goes through the same [`AuditSink`](crate::AuditSink) as everything
 //!   else, as `endpoint=tls outcome=unauthenticated`, with no caller, no
 //!   subject and no reason. An operator who has misconfigured a client CA
 //!   needs to see *that* handshakes are failing; nobody needs to see whose.
 //!
-//! `axum-server` would own all three and expose none of them, and its
+//! `axum-server` would own every one of them and expose none, and its
 //! `tls-rustls` feature selects the `aws-lc-rs` provider — a vendored copy
 //! of AWS-LC, built with cmake — where this crate wants `ring`, which is
 //! already in the workspace's graph. What is used instead is `tokio-rustls`
@@ -39,7 +45,7 @@ use std::time::Duration;
 
 use axum::Router;
 use hyper::server::conn::http1;
-use hyper_util::rt::TokioIo;
+use hyper_util::rt::{TokioIo, TokioTimer};
 use hyper_util::service::TowerToHyperService;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::watch;
@@ -57,6 +63,19 @@ use crate::server::Server;
 /// server with no such thing in front is still not held open by a client
 /// that connects and says nothing.
 pub const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// How long a connection has, after the handshake, to send request headers.
+///
+/// The handshake deadline covers TLS and stops there. Without this one, a
+/// client that completes a handshake and then sends no request bytes — or
+/// drips an incomplete header a byte at a time — holds a socket and a task
+/// for as long as it likes, which is the exhaustion
+/// [`HANDSHAKE_TIMEOUT`] exists to prevent, moved one step further in.
+///
+/// It bounds *headers*, not the request as a whole: a stream's response body
+/// is meant to run for days, and this deadline stops before the first byte
+/// of one is written.
+pub const HEADER_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// How long the accept loop waits after an accept error before trying again.
 ///
@@ -78,6 +97,11 @@ const ACCEPT_BACKOFF: Duration = Duration::from_millis(10);
 /// and close. A config server is restarted by a rollout, and dropping the
 /// fetch a pod is making at that moment would make a rollout look like a
 /// configuration failure to whoever is starting up beside it.
+///
+/// Graceful, and bounded: a connection that has not finished within
+/// [`DRAIN_TIMEOUT`](crate::DRAIN_TIMEOUT) is dropped. An open change stream has no end of its
+/// own, so an unbounded drain would be a rollout that waits for its
+/// subscribers rather than the other way round.
 ///
 /// # Errors
 ///
@@ -182,16 +206,29 @@ async fn connection(
     };
 
     let service = TowerToHyperService::new(router);
-    let connection = http1::Builder::new().serve_connection(TokioIo::new(stream), service);
+
+    let mut builder = http1::Builder::new();
+
+    // The timer is not a detail: hyper reads deadlines from the one the
+    // builder was given, and a `header_read_timeout` set without one is
+    // silently not enforced.
+    builder
+        .timer(TokioTimer::new())
+        .header_read_timeout(HEADER_TIMEOUT);
+
+    let connection = builder.serve_connection(TokioIo::new(stream), service);
 
     tokio::pin!(connection);
 
     tokio::select! {
         _ = connection.as_mut() => {}
         _ = closed.changed() => {
-            // Finish the request in flight, refuse to start another, close.
+            // Finish the request in flight, refuse to start another, close
+            // — but not for longer than `DRAIN_TIMEOUT`, because a stream's
+            // body has no end of its own and would otherwise hold the
+            // rollout open until its client happened to leave.
             connection.as_mut().graceful_shutdown();
-            let _ = connection.await;
+            let _ = tokio::time::timeout(crate::DRAIN_TIMEOUT, connection).await;
         }
     }
 }

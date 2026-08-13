@@ -96,8 +96,75 @@ async fn serve(server: Arc<Server>) -> Result<(), Box<dyn std::error::Error>> {
 /// A config server is restarted by a rollout, which is a SIGTERM. Dropping
 /// the fetch a pod is doing at that moment would make a rollout look like a
 /// configuration failure to whoever is starting up beside it.
+///
+/// So SIGTERM is the signal that matters here, and waiting only on Ctrl-C
+/// would mean the graceful path never ran where it was written for: a
+/// container that ignores SIGTERM is killed outright when the grace period
+/// expires, which is the ungraceful shutdown with extra waiting. Ctrl-C is
+/// handled too, because a server run in a terminal is stopped that way.
 async fn shutdown() {
-    let _ = tokio::signal::ctrl_c().await;
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{signal, SignalKind};
+
+        // A failure to register is not a reason to refuse to run: the
+        // process still stops on the signal, by the default disposition,
+        // which is where it stood before this function existed.
+        let mut terminate = match signal(SignalKind::terminate()) {
+            Ok(terminate) => terminate,
+            Err(_) => {
+                let _ = tokio::signal::ctrl_c().await;
+
+                return;
+            }
+        };
+
+        tokio::select! {
+            _ = terminate.recv() => {}
+            _ = tokio::signal::ctrl_c() => {}
+        }
+    }
+
+    #[cfg(not(unix))]
+    {
+        let _ = tokio::signal::ctrl_c().await;
+    }
+}
+
+/// Plain HTTP, with the drain bounded the way [`serve_tls`] bounds its own.
+///
+/// `axum::serve` waits for every connection to close, and a change stream
+/// is a connection that does not: without the deadline a rollout would run
+/// until its last subscriber went away.
+///
+/// [`serve_tls`]: dynamic_config_server::serve_tls
+async fn serve_plain(
+    listener: tokio::net::TcpListener,
+    server: Arc<Server>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let (signalled, fired) = tokio::sync::oneshot::channel();
+
+    let serving = axum::serve(listener, router(server)).with_graceful_shutdown(async move {
+        shutdown().await;
+        let _ = signalled.send(());
+    });
+
+    tokio::select! {
+        outcome = serving => outcome?,
+        () = async {
+            // `Err` is the sender dropped, which cannot happen before the
+            // signal arrives: the shutdown future owns it and sends before
+            // returning. Awaiting a pending future keeps this arm from
+            // winning the race on a channel error.
+            if fired.await.is_err() {
+                std::future::pending::<()>().await;
+            }
+
+            tokio::time::sleep(dynamic_config_server::DRAIN_TIMEOUT).await;
+        } => {}
+    }
+
+    Ok(())
 }
 
 /// Plain HTTP, or TLS if this build has it and this configuration asked for
@@ -119,11 +186,7 @@ async fn serve_on(
         return Ok(());
     }
 
-    axum::serve(listener, router(server))
-        .with_graceful_shutdown(shutdown())
-        .await?;
-
-    Ok(())
+    serve_plain(listener, server).await
 }
 
 /// A build without the `tls` feature has one serving path. A configuration
@@ -134,9 +197,5 @@ async fn serve_on(
     listener: tokio::net::TcpListener,
     server: Arc<Server>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    axum::serve(listener, router(server))
-        .with_graceful_shutdown(shutdown())
-        .await?;
-
-    Ok(())
+    serve_plain(listener, server).await
 }

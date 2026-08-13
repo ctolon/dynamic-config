@@ -43,8 +43,9 @@ use std::time::Duration;
 
 use dynamic_config::{Error, Fetched, Format, RemoteSource};
 use dynamic_config_store_core::tls::TlsConfig;
+use dynamic_config_store_core::{redacted, LoneAuthority};
 
-use http::{Connection, Endpoint};
+use http::{Budget, Connection, Endpoint};
 
 /// How much of a response body is read before it is refused.
 ///
@@ -89,7 +90,17 @@ impl ConfigServer {
         profile: impl Into<String>,
     ) -> Self {
         let (url, application, profile) = (url.into(), application.into(), profile.into());
-        let described = format!("config server {url} {application}/{profile}");
+
+        // Redacted as the description is built, rather than where each
+        // message is written: this string is quoted into every error this
+        // source raises and is what `describe()` returns — and one of those
+        // errors is the *refusal* of a `user:password@` authority. Printing
+        // the password while saying it is refused would be a leak with a
+        // note attached.
+        let described = format!(
+            "config server {} {application}/{profile}",
+            redacted(&url, LoneAuthority::Username)
+        );
 
         Self {
             // Parsing is deferred to the first fetch so that `new` cannot
@@ -229,14 +240,14 @@ impl ConfigServer {
         let endpoint = Endpoint::parse(&self.url, &self.described)?;
         let path = endpoint.path(&format!("/{}/{}", self.application, self.profile));
 
+        // One budget for the whole attempt, started here: the deadline
+        // `with_timeout` documents is for a fetch, and a fetch is the
+        // connect, the handshake, the request and the body together.
+        let budget = Budget::starting(self.timeout);
+
         let secure = endpoint.secure;
-        let mut connection = Connection::open(
-            &endpoint,
-            self.tls_client(secure)?,
-            self.timeout,
-            &self.described,
-        )
-        .await?;
+        let mut connection =
+            Connection::open(&endpoint, self.tls_client(secure)?, budget, &self.described).await?;
 
         let response = connection
             .get(
@@ -244,7 +255,7 @@ impl ConfigServer {
                 &path,
                 self.token.as_deref(),
                 "application/json",
-                self.timeout,
+                budget,
                 &self.described,
             )
             .await?;
@@ -253,7 +264,7 @@ impl ConfigServer {
             return Err(http::refused(response.status(), &self.described));
         }
 
-        let body = http::body(response, MOST_BYTES, &self.described).await?;
+        let body = http::body(response, MOST_BYTES, budget, &self.described).await?;
         let text = String::from_utf8(body)
             .map_err(|_| Error::remote(format!("{}: the document is not UTF-8", self.described)))?;
 
@@ -311,11 +322,13 @@ impl RemoteSource for ConfigServer {
 
 impl std::fmt::Debug for ConfigServer {
     /// Shape only. The token is the credential and never prints; `TlsConfig`
-    /// redacts its own key material.
+    /// redacts its own key material; and the URL is redacted too, because a
+    /// `user:password@` authority is refused at fetch time rather than at
+    /// construction — so a source carrying one can be printed.
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
             .debug_struct("ConfigServer")
-            .field("url", &self.url)
+            .field("url", &redacted(&self.url, LoneAuthority::Username))
             .field("application", &self.application)
             .field("profile", &self.profile)
             .field("token", &self.token.as_ref().map(|_| "<redacted>"))
@@ -342,6 +355,31 @@ mod tests {
         let error = extract(r#"{"hello":"world"}"#, "a server").unwrap_err();
 
         assert!(error.to_string().contains("no `config` member"), "{error}");
+    }
+
+    /// A password in the URL is refused rather than sent — and the refusal
+    /// must not be where it gets printed. `new` cannot fail, so the source
+    /// exists, is `Debug`-printed and describes itself long before the
+    /// parser gets to say no.
+    #[test]
+    fn a_password_in_the_url_reaches_neither_debug_nor_a_message() {
+        let source = ConfigServer::new(
+            "https://user:hunter2-do-not-print@config.internal",
+            "billing",
+            "prod",
+        );
+
+        let rendered = format!("{source:?}");
+        assert!(!rendered.contains("hunter2"), "{rendered}");
+
+        let described = source.describe();
+        assert!(!described.contains("hunter2"), "{described}");
+        assert!(described.contains("user:***@"), "{described}");
+
+        // And the refusal itself, which quotes the description.
+        let error = Endpoint::parse(&source.url, &source.described)
+            .expect_err("a `user:password@` authority is refused");
+        assert!(!error.to_string().contains("hunter2"), "{error}");
     }
 
     #[test]

@@ -355,6 +355,21 @@ mod server;
 #[cfg_attr(docsrs, doc(cfg(feature = "tls")))]
 pub mod tls;
 
+/// How long a connection has to finish once shutdown has been asked for.
+///
+/// Graceful shutdown means finishing the request in flight — and one of the
+/// requests this server serves, `/{application}/{profile}/stream`, is a
+/// response body that never ends by design. Waiting on every body would mean
+/// waiting for every subscriber to disconnect, so a rollout would hang on
+/// exactly the clients that were paying attention.
+///
+/// So the drain has a deadline, and both serving paths hold to it. A
+/// subscriber loses its stream and reconnects, which is what an
+/// `EventSource` does by itself and what the `Last-Event-ID` rules exist
+/// for; a fetch genuinely in flight has thirty seconds, which is far longer
+/// than any endpoint here takes.
+pub const DRAIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
 pub use audit::{AuditEntry, AuditSink, NoAudit, Outcome, StderrAudit};
 pub use auth::{Authenticator, Principal, Token, MIN_TOKEN_LEN};
 pub use config::{ClientConfig, Refusal, SectionConfig, ServerConfig, TlsConfig};
@@ -362,7 +377,7 @@ pub use document::Document;
 pub use routes::router;
 #[cfg(feature = "tls")]
 #[cfg_attr(docsrs, doc(cfg(feature = "tls")))]
-pub use serve::{serve_tls, HANDSHAKE_TIMEOUT};
+pub use serve::{serve_tls, HANDSHAKE_TIMEOUT, HEADER_TIMEOUT};
 pub use server::{Section, Server, StartupError, StreamPermit};
 #[cfg(feature = "tls")]
 #[cfg_attr(docsrs, doc(cfg(feature = "tls")))]

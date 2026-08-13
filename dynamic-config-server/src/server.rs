@@ -65,6 +65,30 @@ impl Section {
         self.config.generation()
     }
 
+    /// The serving document together with a generation that is never ahead
+    /// of it.
+    ///
+    /// Two atomic loads, and their order is the whole point.
+    /// [`ConfigCell`](dynamic_config::ConfigCell) publishes a snapshot's
+    /// metadata *after* the snapshot itself — deliberately, so that reading
+    /// configuration stays one load with nothing to project out of it — so
+    /// a generation read first may lag the document and can never lead it.
+    ///
+    /// Reading the document first inverts that, and the inversion is the
+    /// harmful direction: a reload landing between the two loads would send
+    /// the *previous* document under the *new* number, and a client that
+    /// records it — or resumes its change stream with it — has been told it
+    /// consumed an update whose contents it never received. This way round,
+    /// the worst case is a response labelled one install behind its own
+    /// contents: the client is told about that install again and fetches
+    /// once more, which costs a round trip and loses nothing.
+    #[must_use]
+    pub fn installed(&self) -> Option<(u64, Arc<Document>)> {
+        let generation = self.generation();
+
+        self.current().map(|document| (generation, document))
+    }
+
     /// What is true of this section right now. No I/O.
     #[must_use]
     pub fn status(&self) -> ConfigStatus {
