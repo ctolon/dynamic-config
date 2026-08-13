@@ -22,7 +22,14 @@ use std::process::Command;
 
 /// What the fixture consumer declares: the facade, under a name that is not
 /// its own, with the macro reached only through the re-export.
+///
+/// The path goes in with forward slashes, which cargo accepts on every
+/// platform. A Windows path spelled with backslashes lands in a TOML *basic*
+/// string, where `\a` is an escape sequence and `D:\a\dynamic-config` is a
+/// parse error rather than a path.
 fn manifest(facade: &Path) -> String {
+    let facade = facade.display().to_string().replace('\\', "/");
+
     format!(
         r#"[package]
 name = "renamed-consumer"
@@ -38,7 +45,7 @@ publish = false
 config = {{ package = "dynamic-config", path = "{}", default-features = false, features = ["json"] }}
 serde = {{ version = "1", features = ["derive"] }}
 "#,
-        facade.display()
+        facade
     )
 }
 

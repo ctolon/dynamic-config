@@ -260,7 +260,11 @@ name = "billing-pod"
 token = "{TOKEN}"
 applications = ["billing"]
 "#,
-                root = root.display()
+                // Forward slashes, which every platform's cargo and this
+                // server's own loader accept: a Windows path spelled with
+                // backslashes lands in a TOML *basic* string, where `\a` is
+                // an escape sequence and the manifest will not parse.
+                root = root.display().to_string().replace('\\', "/")
             ),
             0o600,
         )?;
