@@ -163,3 +163,5 @@ bumps the patch. A change to the minimum supported Rust version is breaking.
   parse is an error naming the setting and never the bytes, and a missing file
   is an error naming the path. Tested with planted material on every new error
   path, including the one `reqwest` renders rather than this crate.
+
+[Unreleased]: https://github.com/ctolon/dynamic-config/compare/v0.5.0...HEAD
