@@ -63,7 +63,7 @@ Adding or changing a method on `_core.Config` means **all** of these:
    `__init__.py` if the name is public.
 3. `python/dynamic_config/_core.pyi` — the stub, or `mypy --strict`
    stops seeing through the boundary.
-4. `book/src/python/reference.md` — the API reference table. A method
+4. `book-python/src/reference.md` — the API reference table. A method
    with an async twin goes on the *same row* as its twin.
 5. `tests/` — the behaviour, not the call. A call a *service* makes
    belongs in `test_integration.py` as well, exercised the way a service

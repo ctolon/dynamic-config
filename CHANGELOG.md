@@ -25,6 +25,41 @@ bumps the patch. A change to the minimum supported Rust version is breaking.
 
 ## [Unreleased]
 
+### Added
+
+- **Advisories are scanned across every ecosystem, not just Cargo.** The
+  wheels ship Pydantic, pydantic-settings and msgspec as runtime
+  dependencies of a published artefact, and `cargo-deny` has never heard of
+  any of them. An `osv-scanner` job now reads the Cargo lockfile *and* what
+  the wheels' extras resolve to today, against a database that aggregates
+  RustSec, PyPA and GitHub advisories — so it is independent of
+  `cargo-deny` rather than a second copy of it, and the two disagreeing is
+  information.
+
+  It fails on an advisory **with a fix available** and warns on one
+  without: a repository that goes red for somebody else's release schedule
+  is a gate people learn to ignore. `osv-scanner.toml` carries the narrow
+  third case — a fix that exists and is pinned out of reach upstream — each
+  entry with the reason and what would expire it.
+- **Every GitHub release carries an SBOM per ecosystem**, CycloneDX JSON:
+  one document per crate and one for the wheels' resolved dependencies.
+  Attached, not gating.
+
+### Changed
+
+- **The Python binding has a book of its own**, at
+  [`/dynamic-config/python/`](https://ctolon.github.io/dynamic-config/python/).
+  Eleven chapters describing an engine through another language were a third
+  of the Rust book's sidebar, and a Python reader arriving from PyPI landed
+  in a table of contents whose first twenty entries were Rust. The store
+  crates deliberately stay: a Consul chapter is read by whoever read the
+  builder tour.
+
+  **Published URLs did not move** — those chapters were already served from
+  `/dynamic-config/python/…` — and `/dynamic-config/python.html` is now a
+  stub that links onward, so nothing that pointed at either breaks. One Pages
+  deployment, two directories; the link checker takes both books' sources.
+
 ### Changed
 
 - **Every crate's crates.io metadata says what that crate is.** The stores

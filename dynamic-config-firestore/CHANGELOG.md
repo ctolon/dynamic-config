@@ -25,6 +25,13 @@ bumps the patch. A change to the minimum supported Rust version is breaking.
 
 ## [Unreleased]
 
+### Added
+
+- **Every failure branch of the watch loop is in a table** in this crate's
+  documentation, marked *reports* or *silent* with the reason. Nothing about
+  the loop changed; what changed is that the question can now be answered by
+  reading.
+
 ## [0.6.0] — 2026-08-13
 
 ### Added

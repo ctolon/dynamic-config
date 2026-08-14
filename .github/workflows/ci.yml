@@ -198,6 +198,7 @@ jobs:
           docker pull redis:7-alpine
           docker pull minio/minio:RELEASE.2025-02-28T09-55-16Z
           docker pull gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators
+          docker pull ghcr.io/shopify/toxiproxy:2.12.0
       # `--test-threads=2`, unlike the justfile's full-speed local run: each
       # test boots its own server container, and four Vaults racing to start
       # on a shared two-core runner is how `WaitContainer(StartupTimeout)`
@@ -212,6 +213,23 @@ jobs:
           -p dynamic-config-s3
           -p dynamic-config-firestore
           -- --test-threads=2
+      # Chaos: the store unplugged mid-watch, and put back. `#[ignore]`d, so
+      # the run above skipped them and this is what runs them — two containers
+      # per test, and a toxiproxy between the source and a store that never
+      # restarts. A restarted container comes back on a different host port,
+      # which is why "it recovered" needs a proxy to be assertable at all.
+      #
+      # Three loops, one per shape: Redis' subscription and etcd's stream end
+      # loudly, Consul's blocking query recovers on its own. The three pollers
+      # prove the same property in their scripted-server suites, with no
+      # Docker, and those already ran in `test`.
+      - run: >
+          cargo test
+          -p dynamic-config-redis
+          -p dynamic-config-consul
+          -p dynamic-config-etcd
+          --test chaos
+          -- --ignored --test-threads=1
       # The examples in these crates are documentation people run against a real
       # server; a stale one is worse than a missing one.
       - run: >
@@ -752,8 +770,8 @@ jobs:
             README.md ROADMAP.md CONTRIBUTING.md SECURITY.md RELEASING.md
             AGENTS.md CHANGELOG.md CREDITS.md docs/*.md scripts/README.md
             dynamic-config-*/README.md dynamic-config-*/CHANGELOG.md
-            book/src/*.md book/src/remote-stores/*.md book/src/python/*.md
-            book/src/config-server/*.md
+            book/src/*.md book/src/remote-stores/*.md
+            book/src/config-server/*.md book-python/src/*.md
             .claude/skills/*/SKILL.md .github/ISSUE_TEMPLATE/*.md
           fail: true
 

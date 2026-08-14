@@ -186,6 +186,23 @@ containers:
                -p dynamic-config-redis -p dynamic-config-s3 \
                -p dynamic-config-firestore
 
+# Chaos: a store unplugged mid-watch, and put back.
+#
+# Needs Docker, and starts *two* containers per test — the store, and a
+# toxiproxy in front of it. The proxy rather than a stopped container is the
+# whole trick: a restarted container comes back on a different host port, so
+# "it recovered" could never be asserted against a source pointing at the old
+# one. Nothing here restarts.
+#
+# They are `#[ignore]`d, so `just containers` skips them and this is what runs
+# them. Three loops, one per shape: Redis' subscription and etcd's stream end
+# loudly, Consul's blocking query recovers on its own. The three pollers prove
+# the same property in `just mocks`, with a scripted 500 and no Docker at all.
+chaos:
+    cargo test -p dynamic-config-redis --test chaos -- --ignored --nocapture
+    cargo test -p dynamic-config-consul --test chaos -- --ignored --nocapture
+    cargo test -p dynamic-config-etcd --test chaos -- --ignored --nocapture
+
 # The `no_std` crate, on a host and for a target with no `std` at all.
 embedded:
     cargo test -p dynamic-config-embedded --features std,async
@@ -267,6 +284,9 @@ examples:
 # (`cargo install mdbook`).
 book:
     mdbook build book
+    # The binding's own book, into the first one's output — the layout CI
+    # publishes: `/dynamic-config/` and `/dynamic-config/python/`.
+    mdbook build book-python --dest-dir book/book/python
 
 # Regenerate the compile-fail expectations after an intentional change.
 bless:

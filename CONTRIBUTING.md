@@ -66,6 +66,19 @@ Their scripted-server tests need no Docker and run in seconds:
 just mocks
 ```
 
+And the chaos suites take a store away *mid-watch* — a toxiproxy in front of
+a server that never restarts, so both the cut and the recovery are
+assertable. They are `#[ignore]`d, so nothing above runs them:
+
+```sh
+just chaos          # Redis, Consul, etcd — one per loop shape
+```
+
+Two containers per test and tens of seconds each, which is why they are a
+nightly and release gate rather than a per-commit one. What they pin is the
+pair an alert reads: `remote_up` goes to zero *while the staleness clock
+keeps running*, and the last good document is still being served.
+
 ## The Python bindings, without a GIL
 
 `just python` runs the suite on whatever interpreter the venv holds. The
@@ -98,7 +111,7 @@ so the claim lives where it is made. And
 `sys._is_gil_enabled()` rather than watching for the interpreter's warning: the
 warning fires once per process at the first import, so a test that reloads the
 module and catches warnings passes either way.
-[Free-Threaded CPython](book/src/python/free-threading.md) is the audit.
+[Free-Threaded CPython](book-python/src/free-threading.md) is the audit.
 
 ## Instruction counts
 

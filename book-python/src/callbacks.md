@@ -115,7 +115,7 @@ the caller's for an explicit `reload()`. So:
   holds a thread the watcher needs.
 
 The rule is the one the Rust
-[reload lifecycle](../reload-lifecycle.md) gives: compare, then signal
+[reload lifecycle](https://ctolon.github.io/dynamic-config/reload-lifecycle.html) gives: compare, then signal
 the thing that owns the resource.
 
 ```python
@@ -140,7 +140,7 @@ The raise is *reported*, through Python's unraisable channel
 (`sys.unraisablehook`), and the hooks after it still run. The install
 itself already happened — a hook is a reaction, not a veto. What vetoes
 a bad configuration is validation, which runs
-[before anything installs](../python.md#where-validation-happens-and-why-it-matters).
+[before anything installs](introduction.md#where-validation-happens-and-why-it-matters).
 
 If you want a hook's failure to be loud, make it loud yourself:
 

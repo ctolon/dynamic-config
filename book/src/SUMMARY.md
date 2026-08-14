@@ -39,17 +39,6 @@
 - [The Config Server](config-server.md)
   - [Threat Model](config-server/threat-model.md)
 - [Python Bindings](python.md)
-  - [API Reference](python/reference.md)
-  - [Callbacks](python/callbacks.md)
-  - [Async & asyncio](python/async.md)
-  - [Data Types](python/types.md)
-  - [Web Frameworks](python/frameworks.md)
-  - [Telemetry](python/telemetry.md)
-  - [Remote Stores in Python](python/remote-stores.md)
-  - [Remote Stores in Rust](python/remote-wheel.md)
-  - [Implementation Details](python/internals.md)
-  - [Free-Threaded CPython](python/free-threading.md)
-  - [Limitations](python/limitations.md)
 - [Examples](examples.md)
 
 # Reference

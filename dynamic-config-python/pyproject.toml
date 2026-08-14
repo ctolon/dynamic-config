@@ -51,7 +51,7 @@ dynamic_config = "dynamic_config.pytest"
 [project.urls]
 Homepage = "https://github.com/ctolon/dynamic-config"
 Repository = "https://github.com/ctolon/dynamic-config"
-Documentation = "https://ctolon.github.io/dynamic-config/"
+Documentation = "https://ctolon.github.io/dynamic-config/python/"
 Changelog = "https://github.com/ctolon/dynamic-config/blob/main/dynamic-config-python/CHANGELOG.md"
 
 [project.optional-dependencies]

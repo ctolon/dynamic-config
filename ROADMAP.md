@@ -105,22 +105,34 @@ was written: `RemoteSink::failed`, `Attempts`, and `reporting_to(sink)` on
 all seven network stores. git carries none of it, deliberately — its watch
 is a poll, and a poll is a fetch, which already records itself.
 
-**What is open is the evidence, and it is a different question.** Whether
-*every* failure branch of seven long-running loops reports cannot be
-answered by reading them — etcd alone routes several branches through one
-helper, and some of its `Err` sites are constructors rather than watch
-failures. Two things settle it: an audit that marks each branch *reports*,
-*deliberately silent* (with the sentence saying why, at the branch), or
-**unreported**; and a chaos test per store that takes the server away
-mid-watch and asserts the pair an alert actually reads — `remote_up` goes
-to zero *while the staleness clock keeps running*, and the last good
-document is still being served.
+**The evidence landed in 0.6.1, and it changed two crates.** Every failure
+branch of the seven loops is now marked in a table in its own crate's
+documentation, under three rules that hold across all of them: a failure
+the loop survives by retrying **reports**; a recovery that *worked* stays
+**silent**, because only a delivery clears the streak and a five-minute
+token turning over on a healthy cluster must not park `remote_up` at zero;
+and a refusal that **never asked the store** reports nowhere.
 
-The silence rule is already written in etcd's comments and generalises: a
-recovery that *worked* stays silent, because reporting a five-minute token
-turning over on a healthy cluster would drive `remote_up` to zero and leave
-it there until the next change; a failure the loop survives by retrying
-reports, because that is the case the whole feature exists for.
+The third rule is the one the audit settled rather than recorded. etcd and
+NATS reported a watch refused before its first round trip — no format, a
+key shape that cannot be watched — and Redis and S3 did not, each with a
+test asserting its own half. `RemoteStatus::reachable()`'s contract
+decides it: *whether the store answered the last time it was asked*. Those
+refusals never ask, and a status carries a kind and a path and **no
+message**, so `remote_up = 0` for a source typo is an alert about a
+healthy store that nothing downstream can correct. etcd and NATS were
+changed to match; the error still says exactly what is wrong, to the
+caller holding it.
+
+`just chaos` is the other half: toxiproxy in front of a store that never
+restarts, so a cut cable and a restored one are both assertable. Three
+loops are covered there, one per shape — Redis' subscription and etcd's
+stream **end loudly**, Consul's blocking query **recovers on its own** —
+and each asserts the pair an alert reads: `remote_up` goes to zero *while
+the staleness clock keeps running*, and the last good document is still
+being served. The three pollers (Vault, Firestore, S3) have the same
+property proven without Docker, by their scripted-server suites: a poll
+that fails reports, the loop survives, and the clock keeps ageing.
 
 ---
 
@@ -194,14 +206,19 @@ lands on their crate and not on chapter one, without splitting a link graph
 that is doing real work. It is worth doing when a store's chapter is long
 enough that this is not just a redirect; today two of them are.
 
-**One split is decided and is not this one: a book per *binding*.** A
-Python reader is not a Rust reader who wants a shorter chapter — they are
-somebody who will never write `#[dynamic_config]`, arriving from PyPI into
-twenty chapters of Rust. That argument does not apply to a store crate,
-whose chapter is read by exactly the person who read the builder tour, so
-the store pages stay. 0.6.1 moves the Python chapters to a book of their
-own and the Node binding gets a third; the cross-links between books
-become absolute URLs the link checker verifies, which is the cost.
+**One split is decided, it is not this one, and it has landed: a book per
+*binding*.** A Python reader is not a Rust reader who wants a shorter
+chapter — they are somebody who will never write `#[dynamic_config]`,
+arriving from PyPI into twenty chapters of Rust. That argument does not
+apply to a store crate, whose chapter is read by exactly the person who
+read the builder tour, so the store pages stay. 0.6.1 moved the Python
+chapters into `book-python/`, published into the Rust book's own output as
+`/dynamic-config/python/` — the URL those chapters already had, so nothing
+that linked to them moved, and `/dynamic-config/python.html` is a stub that
+links onward. The cost is what was predicted: the inward links became
+absolute URLs, and the link checker takes both books' sources so they are
+verified like any other external link. The Node binding gets a third book
+of the same shape.
 
 ---
 

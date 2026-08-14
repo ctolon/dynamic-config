@@ -25,6 +25,22 @@ bumps the patch. A change to the minimum supported Rust version is breaking.
 
 ## [Unreleased]
 
+### Changed
+
+- **A watch refused before its first round trip no longer reports the server
+  as unreachable.** No format, or a source naming several keys: those are
+  refusals this crate makes about the *source*, before a request has left the
+  process, and `RemoteStatus::reachable()` is *whether the store answered the
+  last time it was asked*. The reasoning, and the split it settled across the
+  seven store crates, is written out in `dynamic-config-etcd`'s changelog for
+  the same release. Every failure a watch meets *after* the first round trip
+  reports exactly as it did.
+
+### Added
+
+- **Every failure branch of the watch loop is in a table** in this crate's
+  documentation, marked *reports* or *silent* with the reason.
+
 ## [0.6.0] — 2026-08-13
 
 ### Added

@@ -221,5 +221,5 @@ config.on_reload(lambda old, new: loop.call_soon_threadsafe(queue.put_nowait, ne
 ```
 
 That is the same advice the Rust
-[reload lifecycle](../reload-lifecycle.md) gives: compare, then signal
+[reload lifecycle](https://ctolon.github.io/dynamic-config/reload-lifecycle.html) gives: compare, then signal
 the thing that owns the resource.

@@ -30,6 +30,16 @@ one.
 
 ## [Unreleased]
 
+### Added
+
+- **The rule every store's watch loop follows is written here**, in
+  `attempts`' own documentation, and each crate's table is that rule applied
+  to its loop: a failure the loop survives by retrying reports; a recovery
+  that worked stays silent; and a refusal that never asked the store reports
+  nowhere. The third is what 0.6.1's audit settled — two crates reported such
+  a refusal and two did not, each with a test, and
+  `RemoteStatus::reachable()`'s contract decided it.
+
 ## [0.6.0] — 2026-08-13
 
 ### Added

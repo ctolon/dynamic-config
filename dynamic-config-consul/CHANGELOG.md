@@ -25,6 +25,18 @@ bumps the patch. A change to the minimum supported Rust version is breaking.
 
 ## [Unreleased]
 
+### Added
+
+- **Every failure branch of the watch loop is in a table** in this crate's
+  documentation, marked *reports* or *silent* with the reason — including the
+  empty-key branch, which this crate records and two others deliberately do
+  not.
+- **A chaos test** (`tests/chaos.rs`, `just chaos`): a blocking query cut
+  mid-watch by a toxiproxy in front of an agent that never restarts. This is
+  the loop that *survives* a failure, so it is the one where the cable going
+  back in has an ending worth asserting — the streak clears, the next document
+  is delivered, and nobody had to call anything.
+
 ## [0.6.0] — 2026-08-13
 
 ### Added
