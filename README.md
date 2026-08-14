@@ -102,7 +102,7 @@ schema export, units, the last-known-good cache, testing patterns — lives in
 | [`dynamic-config-embedded`](dynamic-config-embedded) | the same shape for `no_std` targets | Experimental |
 | [`dynamic-config-server`](dynamic-config-server) | serves configuration over HTTP, per-caller authorisation | Experimental |
 | [`dynamic-config-cli`](dynamic-config-cli) | `explain` and `diff` on the command line — `cargo install dynamic-config-cli` | Experimental |
-| [`dynamic-config-python`](dynamic-config-python) | Python bindings — `pip install dynamic-config-py`, Pydantic validates | Experimental |
+| [`dynamic-config-python`](dynamic-config-python) | Python bindings — `pip install dynamic-config-py`; a dataclass, Pydantic or msgspec validates | Experimental |
 | [`dynamic-config-python-remote`](dynamic-config-python-remote) | the stores for Python — `pip install "dynamic-config-py[remote]"` | Experimental |
 
 `dynamic-config-store-core` is also published, and is not in the table: it

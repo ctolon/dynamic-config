@@ -7,12 +7,13 @@
 pip install dynamic-config-py                     # the import is `dynamic_config`
 pip install dynamic-config-py[pydantic]           # + Pydantic models
 pip install dynamic-config-py[pydantic-settings]  # + BaseSettings classes
-pip install dynamic-config-py[all]                # all of it
+pip install dynamic-config-py[msgspec]            # + msgspec Structs
+pip install dynamic-config-py[all]                # the Pydantic pair
 ```
 
 The base install has **no dependencies**: the engine is compiled into the
-wheel, and a `dataclasses.dataclass` is a schema here. Pydantic is an
-extra because it is a choice — see
+wheel, and a `dataclasses.dataclass` is a schema here. Pydantic and
+msgspec are extras because each is a choice — see
 [What a schema may be](python/types.md#what-a-schema-may-be) for what
 each kind validates, including `Values`, which is
 [no schema at all](python/types.md#values-a-configuration-with-no-schema):
@@ -365,6 +366,13 @@ Whatever Pydantic validates, this loads: enums, `datetime`, `UUID`,
 `SecretStr`. [Data Types](python/types.md) covers the whole range and the
 three conversions that have to be exact — an integer staying an integer,
 a bool not becoming `1`, and a large `u64` keeping its digits.
+
+A `msgspec.Struct` is the fifth kind of declaration, and the fastest:
+msgspec builds the instance in C, declares a secret through
+`Meta(extra={"secret": True})`, and leaves unknown keys to the struct's
+own `forbid_unknown_fields`. [A msgspec
+Struct](python/types.md#a-msgspec-struct-and-what-it-answers-differently)
+has the three answers that are msgspec's rather than this library's.
 
 And whatever a *model* may be, it may be the schema: inheritance,
 mixins, `model_config`, validators, computed fields, `RootModel`,

@@ -1204,20 +1204,32 @@ impl Config {
 
     /// A crate error as the exception that mirrors it — with Pydantic's
     /// own scrubbed report attached when validation is what refused.
+    ///
+    /// `errors` is set for *every* refusal, empty when the schema had no
+    /// report to give: a dataclass raises a message, and msgspec raises a
+    /// message, so only Pydantic fills it. The attribute existing either
+    /// way is what makes the stub's `errors: list[dict[str, Any]]` true —
+    /// a program that reads it after catching `InvalidError` should find
+    /// an empty list rather than an `AttributeError` that depends on
+    /// which schema library the configuration happened to use.
     fn raise(&self, py: Python<'_>, error: &Error) -> PyErr {
         let failure = errors::to_py_err(py, error);
 
         if error.kind() == dynamic_config::ErrorKind::Invalid {
-            if let Some(reports) = self
+            let reports = self
                 .inner
                 .shared
                 .reports
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .take()
-            {
-                let _ = failure.value(py).setattr("errors", reports);
-            }
+                .take();
+
+            let _ = match reports {
+                Some(reports) => failure.value(py).setattr("errors", reports),
+                None => failure
+                    .value(py)
+                    .setattr("errors", pyo3::types::PyList::empty(py)),
+            };
         }
 
         failure

@@ -17,7 +17,7 @@ model rather than `Any`.
 
 | Parameter | Default | Meaning |
 |---|---|---|
-| `model` | required | the schema class: a `dataclasses.dataclass`, a Pydantic model, a Pydantic dataclass — see [What a schema may be](types.md#what-a-schema-may-be) — or [`Values`](#values), which is no schema at all |
+| `model` | required | the schema class: a `dataclasses.dataclass`, a Pydantic model, a Pydantic dataclass, a `msgspec.Struct` — see [What a schema may be](types.md#what-a-schema-may-be) — or [`Values`](#values), which is no schema at all |
 | `key` | required | the section this configuration reads (`[db]` in a TOML file). It also names the environment prefix, the cache entry and every diagnostic; `""` is a configuration with nothing to call itself, which goes with `whole_document()` |
 | `executor` | `None` | which pool runs the blocking half of the async calls; `None` follows [`set_executor`](#set_executorexecutor) |
 | `secrets` | `()` | dotted paths whose values must never reach a diagnostic. A declared model already says which of its fields are secret and these are *added* to that; for a `Values` configuration they are the only such statement, and the `cache(path, mode)` modes that redact are refused without them |
@@ -282,13 +282,16 @@ on the loop's default executor — see
 
 ### `secret_paths(model)`
 
-Every dotted path in `model` that holds a `SecretStr` or `SecretBytes` —
-through `Optional`, unions, containers, nested models, Pydantic
-dataclasses and `RootModel`. This is what seeds the redaction, and it is
-derived rather than declared, so nobody keeps a second list in step with
-the first. A field lists **every** name a file could carry it under (each
-alias and the field name), because a secret spelled the other way is
-still a secret; see [Aliases](types.md#aliases-in-all-four-shapes).
+Every dotted path in `model` that is declared secret, in whichever
+vocabulary the declaration uses: a `SecretStr` or `SecretBytes` — through
+`Optional`, unions, containers, nested models, Pydantic dataclasses and
+`RootModel` — a dataclass field's `metadata={"secret": True}`, or a
+`msgspec.Meta(extra={"secret": True})`. This is what seeds the redaction,
+and it is derived rather than declared twice, so nobody keeps a second
+list in step with the first. A field lists **every** name a file could
+carry it under (each alias and the field name), because a secret spelled
+the other way is still a secret; see
+[Aliases](types.md#aliases-in-all-four-shapes).
 
 ### `Values`
 
@@ -447,7 +450,7 @@ instance carries `kind`, `path`, `origin_kind` and `origin`.
 | `MissingError` | A required value is supplied by nothing |
 | `TypeMismatchError` | A value cannot become the requested type |
 | `EnvError` | An environment variable could not be interpreted |
-| `InvalidError` | The configuration as a whole was rejected — Pydantic's report is on `.errors`, scrubbed of input values |
+| `InvalidError` | The configuration as a whole was rejected — Pydantic's report is on `.errors`, scrubbed of input values, and `[]` for a schema that raises a message rather than a report (a dataclass, a `msgspec.Struct`) |
 | `RemoteError` | A remote store could not be read — unreachable, refusing, malformed |
 | `AuthError` | A credential was rejected, or could not be obtained. Distinct from `RemoteError` on purpose: waiting fixes one and not the other |
 | `DecryptError` | An encrypted source could not be decrypted |

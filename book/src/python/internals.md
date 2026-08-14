@@ -165,6 +165,11 @@ The same walk descends into Pydantic dataclasses, and treats a
 `RootModel` as living where its *outer* field is rather than at the
 `root` key no file writes.
 
+Each other schema is walked the same way in its own vocabulary: a
+dataclass field's `metadata={"secret": True}`, and a
+`msgspec.Meta(extra={"secret": True})` — under `encode_name`, which is
+the key msgspec decodes and therefore the one a file writes.
+
 That list drives everything downstream: the redacted cache drops those
 paths, `explain` renders them `***`, and the scrubbed `ValidationError`
 keeps locations and messages but not input values.

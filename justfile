@@ -65,7 +65,7 @@ mocks:
 # the suite, the type checker and the linter against it. Needs a venv
 # (`python -m venv .venv && . .venv/bin/activate && pip install -e
 # 'dynamic-config-python[dev]'`, or the same list by hand: maturin
-# pytest pytest-asyncio pydantic pydantic-settings mypy ruff).
+# pytest pytest-asyncio pydantic pydantic-settings msgspec mypy ruff).
 # `CARGO_TARGET_DIR` per recipe, and it is not a nicety: both wheels' cdylib
 # is `[lib] name = "_core"`, so they write the same `lib_core.so`. Sharing a
 # target directory makes the second `maturin develop` report "Finished in

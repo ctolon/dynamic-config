@@ -102,7 +102,7 @@ variable. Nesting uses a doubled separator:
 
 ## What a schema may be
 
-Four kinds of class can be a schema — and a fifth answer, which is *no
+Five kinds of class can be a schema — and a sixth answer, which is *no
 schema*. The whole surface — sources, precedence, watching, recovery,
 diagnostics — is identical across all of them. What differs is what
 *validation* means, and what you have to install:
@@ -113,10 +113,13 @@ diagnostics — is identical across all of them. What differs is what
 | `pydantic.BaseModel` | `[pydantic]` | Pydantic's, entire — coercion, constraints, validators, computed fields |
 | `pydantic.dataclasses.dataclass` | `[pydantic]` | the same, through the dataclass validator |
 | `pydantic_settings.BaseSettings` | `[pydantic-settings]` | Pydantic's, plus a [sourcing declaration this engine can translate](#pydantic-settings) |
+| `msgspec.Struct` | `[msgspec]` | msgspec's, in C — types, `Meta` constraints, and unknown keys if the struct asks |
 | `Values` | nothing | none — [a configuration with no schema](#values-a-configuration-with-no-schema) |
 
 The base install has no dependencies at all; each extra buys one more
-kind of schema and nothing else. `[all]` is both.
+kind of schema and nothing else. `[all]` is the Pydantic pair —
+deliberately *not* msgspec, which is a different validation engine rather
+than an addition to that one.
 
 ### `Values`: a configuration with no schema
 
@@ -206,6 +209,61 @@ looks in the module where the class was defined. A dataclass declared
 annotations stay strings and there is nothing to check them against.
 Declare configuration dataclasses at module level. (Pydantic meets the
 same wall and answers it with `model_rebuild()`.)
+
+### A msgspec Struct, and what it answers differently
+
+```python
+import msgspec
+from typing import Annotated
+
+class Database(msgspec.Struct):
+    host: str
+    port: int = 5432
+    password: Annotated[str, msgspec.Meta(extra={"secret": True})] = ""
+    workers: Annotated[int, msgspec.Meta(ge=1, le=64)] = 4
+```
+
+The declaration reads like a dataclass and validates like Pydantic, and
+it is the fastest of the five at exactly what a reload asks of a schema:
+one resolved mapping, one instance, once. Decoding is **lax**
+(`strict=False`), which is what configuration needs — every environment
+variable is a string, and refusing `APP_DB_PORT=7000` for being one is
+not a mistake anybody made.
+
+Three answers are msgspec's own rather than this library's:
+
+| | msgspec | Beside it |
+|---|---|---|
+| **a secret** | `Meta(extra={"secret": True})` | `SecretStr`, or `field(metadata={"secret": True})` |
+| **unknown keys** | ignored, unless the struct says `forbid_unknown_fields=True` | a Pydantic model's `extra`; a dataclass always refuses |
+| **`InvalidError.errors`** | empty — msgspec raises a message, not a report | Pydantic's own report, scrubbed of values |
+
+`Meta`'s `extra` mapping is msgspec's door for another library's flag, so
+nothing is invented here: it drives the same redaction the other two
+declarations do — the cache drops the path, `explain` renders it `***` —
+and `DynamicConfig(Model, key=…, secrets=[…])` still adds to it.
+
+The empty `errors` is a decision rather than an oversight. msgspec's
+`ValidationError` carries a message and no structured report, and
+parsing that message into a report-shaped object would be inventing
+structure the library never promised. The attribute is *present* and
+empty for every schema that has no report to give, so a program reading
+it after `except InvalidError` does not have to know which schema library
+the configuration was declared with.
+
+**One thing this binding does to msgspec's messages:** it takes the value
+back out. Two of them quote the data they refused — `Invalid enum value
+'…'` and, for a tagged union, `Invalid value '…'` — and the rule here is
+that no value reaches a diagnostic, whichever library wrote the sentence.
+The path survives, because a path is field names; what a `Level` field
+was set to does not.
+
+A field renamed by `rename="camel"` or `msgspec.field(name=…)` is known
+here by the name a *file* writes, which is the name msgspec itself
+decodes. A file spelling the Python name is reporting an unknown key
+rather than setting the field, and `check()` says so.
+
+`examples/22_msgspec.py` runs all of it.
 
 ### What a Pydantic model may be
 

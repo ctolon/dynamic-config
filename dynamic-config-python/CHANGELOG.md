@@ -26,6 +26,38 @@ breaking.
 
 ## [Unreleased]
 
+### Added
+
+- **`msgspec.Struct` is a schema.** The fifth kind of declaration, and
+  the fastest at what a reload asks of one: `pip install
+  dynamic-config-py[msgspec]`, then pass the struct where a model would
+  go. Everything around it is unchanged — the same sources, watcher,
+  cache and diagnostics — and the three answers that are msgspec's own
+  are documented rather than left to be discovered: a secret is declared
+  with `Meta(extra={"secret": True})`, unknown keys are the struct's
+  business (`forbid_unknown_fields`), and `InvalidError.errors` is empty
+  because msgspec raises a message rather than a report. Decoding is lax,
+  because an environment variable is a string. `examples/22_msgspec.py`.
+- `changed_paths` and `set_default` accept a `msgspec.Struct` instance,
+  under the names a file writes rather than the Python ones — a struct
+  declaring `rename="camel"` diffs as `maxSize`, which is the key every
+  other path in this library already uses.
+
+### Changed
+
+- **`InvalidError.errors` is present on every refusal**, and `[]` when
+  the schema raised a message rather than a report. It used to be absent
+  for a dataclass schema, so `error.errors` was an `AttributeError` that
+  depended on which schema library the configuration happened to use —
+  while the shipped stub declared it unconditionally.
+
+### Fixed
+
+- A msgspec `ValidationError` no longer carries the value it refused into
+  a diagnostic. Two of msgspec's messages quote the data — an enum member
+  and a tagged union's tag — and this boundary takes it back out, keeping
+  the path, which is field names rather than data.
+
 ### Changed
 
 - One classifier per interpreter the CI matrix actually runs (3.9 through
@@ -509,4 +541,3 @@ is now pinned by a test.
   stopped at interpreter shutdown rather than left to call into a
   finalized Python.
 
-[Unreleased]: https://github.com/ctolon/dynamic-config/compare/v0.4.0...HEAD

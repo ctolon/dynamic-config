@@ -229,6 +229,22 @@ there is nothing to check them against — the fields are filled without a
 type check. Declare configuration dataclasses at module level. Pydantic
 meets the same wall and answers it with `model_rebuild()`.
 
+## What a msgspec schema does not carry
+
+`InvalidError.errors` is empty for a `msgspec.Struct`, and stays that
+way. msgspec's `ValidationError` is a message and a path; there is no
+structured report behind it, and building one by parsing that message
+would be inventing structure the library never promised — the kind of
+plausible lie a program would then branch on. `str(error)` names the
+field, which is what a dataclass schema gives too.
+
+Secrets are declared through `Meta(extra={"secret": True})` rather than a
+type, because msgspec has no `SecretStr` and does not want one: its
+`Annotated` metadata carries constraints, plus an `extra` mapping meant
+for exactly this kind of flag. A `SecretStr` annotation inside a struct
+is not a secret declaration here — msgspec cannot build one, so the field
+would not load at all.
+
 ## Not planned
 
 - **A settings-source shim for `pydantic-settings`.** The two libraries

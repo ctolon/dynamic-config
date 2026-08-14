@@ -317,7 +317,11 @@ jobs:
           python-version: ${{ matrix.python }}
       # The framework packages are here for the three integration
       # examples: an example that only compiles is not an example.
-      - run: pip install maturin pytest pytest-asyncio pydantic pydantic-settings mypy ruff fastapi flask django httpx
+      # msgspec is here and *not* in the free-threaded job below: it
+      # publishes no `cp314t` wheel, so installing it there would build
+      # it from source or fail, and the msgspec tests skip themselves
+      # when it is absent.
+      - run: pip install maturin pytest pytest-asyncio pydantic pydantic-settings msgspec mypy ruff fastapi flask django httpx
       # `maturin build` rather than `develop`: this produces the wheel a
       # user would install, and the next step installs *that*, so the
       # packaging is exercised by the same job that exercises the code.
@@ -330,13 +334,13 @@ jobs:
       # The base install has no dependencies, and that claim is worth a
       # job rather than a sentence: a fresh interpreter, the wheel and
       # nothing else, running the suite that needs nothing else.
-      - name: the base install, with no Pydantic anywhere
+      - name: the base install, with no schema library anywhere
         run: |
           python -m venv /tmp/bare
           /tmp/bare/bin/pip install --quiet --no-index --find-links dist dynamic-config-py
           /tmp/bare/bin/pip install --quiet pytest
-          /tmp/bare/bin/python -c "import dynamic_config, sys; assert not [m for m in sys.modules if m.startswith('pydantic')], 'importing the package pulled in Pydantic'"
-          /tmp/bare/bin/python -m pytest tests/test_dataclasses.py -q
+          /tmp/bare/bin/python -c "import dynamic_config, sys; assert not [m for m in sys.modules if m.startswith(('pydantic', 'msgspec'))], 'importing the package pulled in a schema library'"
+          /tmp/bare/bin/python -m pytest tests/test_dataclasses.py tests/test_msgspec.py -q
           /tmp/bare/bin/python examples/17_dataclasses.py > /dev/null
         working-directory: dynamic-config-python
       # The stubs are shipped, so they are checked: `current()` has to

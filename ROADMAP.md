@@ -89,9 +89,7 @@ Two 0.6 answers are worth keeping in view because they will be asked again:
 need for, the [runtime-agnostic S3 sleep](#runtime-agnostic-s3-watch-sleep-own)
 that is blocked on the AWS SDK, [serde_yaml](#serde_yamls-future-own) which
 moves when figment moves, [a ninth store](#a-store-nobody-has-asked-for-yet-own)
-nobody has asked for, [msgspec as a fifth Python
-schema](#msgspec-as-a-python-schema-own) waiting on somebody who actually
-wants it, and [a book per crate](#one-book-or-a-book-per-crate-own) — where
+nobody has asked for, and [a book per crate](#one-book-or-a-book-per-crate-own) — where
 the answer is probably per-crate entry *points* rather than fourteen books.
 
 ---
@@ -243,42 +241,6 @@ candidate.
 New capability proposals queue behind stability during that window. The problem worth
 solving by then is not a missing feature; it is that nothing this
 sophisticated has been beaten up by strangers yet.
-
-### msgspec as a Python schema **[own]**
-
-The binding's schema surface is an adapter — `validate`, `field_names`,
-`secret_paths`, `is_instance` — and there are four implementations of it
-already: Pydantic, a Pydantic dataclass, a plain `dataclasses.dataclass`,
-and `Values`, which is no schema at all.
-[msgspec](https://github.com/jcrist/msgspec) is the obvious fifth: a
-`msgspec.Struct` is a declaration in the same shape as the other two typed
-ones, it validates on decode, and it is markedly faster than Pydantic at
-exactly the thing this engine asks a schema to do — turn one resolved
-mapping into one instance, once per reload.
-
-**What makes it a decision rather than an afternoon.** The adapter's four
-questions map cleanly (`msgspec.convert` for the validate half,
-`msgspec.structs.fields` for the names), but two things do not:
-
-- **Secrets have no declaration.** Pydantic has `SecretStr`, a dataclass has
-  `field(metadata={"secret": True})`, and msgspec has neither — its
-  `Meta`/`Annotated` carries constraints, not a place for a library's own
-  flag. So either `Annotated[str, Meta(extra={"secret": True})]` becomes the
-  spelling, which is this package inventing a convention in somebody else's
-  namespace, or a msgspec configuration passes `secrets=[..]` the way a
-  `Values` one does. The second is honest and already exists; it is also a
-  second way to say a thing the other schemas say once.
-- **The error shape.** `InvalidError.errors` carries Pydantic's own report,
-  scrubbed of values, because a Python program branches on it. msgspec
-  raises a `ValidationError` with a message and no structured report, so a
-  msgspec configuration's `errors` would be empty — which is fine and has to
-  be *said*, or it reads as a bug.
-
-Neither is hard; both are decisions about a surface that is meant to look
-the same whichever schema you brought. Worth doing when somebody is
-actually reaching for msgspec — the extra is `dynamic-config-py[msgspec]`,
-the adapter is one file next to `_pydantic.py`, and the base install goes on
-depending on nothing.
 
 ### `WriteDurability` as API **[own]**
 0.1.0 fsyncs every atomic write, unconditionally. If someone measures real

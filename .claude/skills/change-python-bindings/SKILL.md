@@ -15,7 +15,11 @@ code.
 dynamic-config-python/
   src/                       the compiled half — `dynamic_config._core`
     lib.rs                   module registration, the two version strings
-    config.rs                the engine object: sources, lifecycle, hooks
+    config/                  the engine object: sources, lifecycle, hooks
+      mod.rs                 the Config class itself, and Watch/Snapshot
+      inner.rs               the shared state a hook and a load both touch
+      scrub.rs               a Python failure, minus the values it names
+      handles.rs             the objects handed back out
     convert.rs               resolved tree ⇄ Python data
     errors.rs                the exception hierarchy, mirroring ErrorKind
   python/dynamic_config/     the facade, one concern per file
@@ -27,16 +31,19 @@ dynamic-config-python/
     _errors.py               NotInitialisedError
     _executor.py             set_executor
     _lifetime.py             Watch, HookGuard, the atexit sweep
+    _msgspec.py              a msgspec Struct as a schema
     _pydantic.py             a Pydantic model as a schema
     _schema.py               which adapter a class gets; the shared questions
     _settings.py             the pydantic-settings bridge
+    _values.py               Values: a configuration with no schema
     _core.pyi                stubs for the compiled half
     py.typed
   tests/                     pytest, one file per concern
     test_dataclasses.py      the dependency-free schema, and its refusals
+    test_msgspec.py          the msgspec schema, and the three answers of its own
     test_pydantic.py         the class surface, aliases, BaseSettings
     test_integration.py      whole scenarios, and the shipped examples
-  examples/                  seventeen runnable scripts, all run in CI
+  examples/                  twenty-two runnable scripts, all run in CI
   benchmarks/read_path.py    the numbers the book quotes
 ```
 
