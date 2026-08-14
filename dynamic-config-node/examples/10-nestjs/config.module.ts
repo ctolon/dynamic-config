@@ -12,7 +12,7 @@
  *   npx tsc --noEmit examples/10-nestjs/config.module.ts
  */
 
-import { DynamicConfig } from "dynamic-config";
+import { DynamicConfig } from "dynamic-config-node";
 
 export interface Database {
   host: string;

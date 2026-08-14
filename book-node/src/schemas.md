@@ -7,7 +7,7 @@ one sentence, applied.
 ## Zod
 
 ```ts
-import { DynamicConfig, zodValidator } from "dynamic-config"
+import { DynamicConfig, zodValidator } from "dynamic-config-node"
 import { z } from "zod"
 
 const Database = z.object({
@@ -34,7 +34,7 @@ silently ignored.
 ## Ajv, TypeBox and JSON Schema
 
 ```ts
-import { DynamicConfig, ajvValidator } from "dynamic-config"
+import { DynamicConfig, ajvValidator } from "dynamic-config-node"
 import Ajv from "ajv"
 
 const validate = new Ajv().compile({

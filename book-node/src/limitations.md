@@ -25,7 +25,7 @@ them. What ships to a client is a snapshot the server chose to send.
 
 etcd, Consul, Vault, NATS, Redis, S3, Firestore and git each carry a
 client — gRPC, an AWS SDK, three HTTP stacks — and putting them in every
-`npm install dynamic-config` is not a default anybody asked for. Same
+`npm install dynamic-config-node` is not a default anybody asked for. Same
 reasoning as the second wheel in Python.
 
 A store this package does not ship is still a function away:

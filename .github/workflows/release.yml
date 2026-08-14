@@ -496,9 +496,25 @@ jobs:
           MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_TOKEN }}
 
   addons:
-    name: build the addon (${{ matrix.target }})
-    needs: decide
-    if: needs.decide.outputs.release == 'true' || github.event_name == 'workflow_dispatch'
+    name: build the addons (${{ matrix.target }})
+    # After the crates are on crates.io, exactly like the wheel wave: an
+    # npm package published for a release whose crates never made it is a
+    # version pair that exists nowhere else, and npm versions are as
+    # permanent as PyPI's.
+    needs: [decide, publish]
+    env:
+      # One protoc for every addon this job builds, pinned like the wheel
+      # wave's.
+      PROTOC_VERSION: "29.3"
+    # The wheel wave's condition, word for word: a `publish` that was
+    # skipped (a dispatch that only wants the addons) must not stop this,
+    # and one that failed must.
+    if: >-
+      always()
+      && needs.decide.result == 'success'
+      && needs.publish.result != 'failure'
+      && needs.publish.result != 'cancelled'
+      && (needs.decide.outputs.release == 'true' || github.event_name == 'workflow_dispatch')
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     strategy:
@@ -528,30 +544,68 @@ jobs:
       # addon links against the platform's own C runtime, and a cross build
       # that "works" is one nobody has loaded on the machine it targets.
       # The arm64 Linux runner is why this is five jobs and not three.
+      # etcd's client compiles its gRPC stubs at build time, so the stores
+      # addon needs `protoc` on every runner — and no runner image has it.
+      #
+      # From the project's own release, pinned, rather than from a package
+      # manager: the same decision the wheel wave made, after `choco
+      # install protoc` answered "the package was not found" and took a
+      # release down with it. It also means every platform's addon is built
+      # by the *same* compiler.
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - if: runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          curl -fsSL -o "${RUNNER_TEMP}/protoc.zip" \
+            "https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-osx-universal_binary.zip"
+          sudo unzip -o "${RUNNER_TEMP}/protoc.zip" 'bin/protoc' 'include/*' -d /usr/local
+          protoc --version
+      - if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = $env:PROTOC_VERSION
+          $url = "https://github.com/protocolbuffers/protobuf/releases/download/v$version/protoc-$version-win64.zip"
+          $zip = Join-Path $env:RUNNER_TEMP 'protoc.zip'
+          $dir = Join-Path $env:RUNNER_TEMP 'protoc'
+
+          Invoke-WebRequest -Uri $url -OutFile $zip
+          Expand-Archive -Path $zip -DestinationPath $dir -Force
+          Join-Path $dir 'bin' | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          & (Join-Path $dir 'bin\protoc.exe') --version
       - run: cargo build -p dynamic-config-node --release --target ${{ matrix.target }}
-      - name: name it the way npm expects
+      - run: cargo build -p dynamic-config-node-remote --release --target ${{ matrix.target }}
+      - name: name them the way npm expects
         shell: bash
         run: |
-          mkdir -p artefacts
+          mkdir -p artefacts/node artefacts/node-remote
+
           case "${{ matrix.target }}" in
-            *windows*) built="target/${{ matrix.target }}/release/dynamic_config_node.dll" ;;
-            *apple*)   built="target/${{ matrix.target }}/release/libdynamic_config_node.dylib" ;;
-            *)         built="target/${{ matrix.target }}/release/libdynamic_config_node.so" ;;
+            *windows*) prefix=""; suffix="dll" ;;
+            *apple*)   prefix="lib"; suffix="dylib" ;;
+            *)         prefix="lib"; suffix="so" ;;
           esac
-          cp "$built" "artefacts/${{ matrix.target }}.node"
-      # The suite, against the binary that will ship — not against a debug
-      # build of the same source. Skipped where the runner cannot execute
-      # what it just built, which is nothing today and would be a
-      # cross-compiled target tomorrow.
-      - name: the suite, against the artefact
+
+          built="target/${{ matrix.target }}/release"
+          cp "$built/${prefix}dynamic_config_node.$suffix" "artefacts/node/${{ matrix.target }}.node"
+          cp "$built/${prefix}dynamic_config_node_remote.$suffix" \
+             "artefacts/node-remote/${{ matrix.target }}.node"
+      # Both suites, against the binaries that will ship — not against a
+      # debug build of the same source.
+      - name: the suites, against the artefacts
         shell: bash
         run: |
-          cp "artefacts/${{ matrix.target }}.node" dynamic-config-node/index.node
-          cd dynamic-config-node && node --test "tests/*.test.js"
+          cp "artefacts/node/${{ matrix.target }}.node" dynamic-config-node/index.node
+          cp "artefacts/node-remote/${{ matrix.target }}.node" dynamic-config-node-remote/index.node
+          mkdir -p dynamic-config-node-remote/node_modules
+          ln -sfn ../../dynamic-config-node dynamic-config-node-remote/node_modules/dynamic-config-node
+
+          (cd dynamic-config-node && node --test "tests/*.test.js")
+          (cd dynamic-config-node-remote && node --test "tests/*.test.js")
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: addon-${{ matrix.target }}
-          path: artefacts/*.node
+          path: artefacts/**/*.node
           if-no-files-found: error
 
   publish-npm:
@@ -579,26 +633,36 @@ jobs:
         with:
           pattern: addon-*
           merge-multiple: true
-          path: dynamic-config-node/artefacts
+          path: artefacts
+      - name: sort the artefacts by package
+        run: |
+          mkdir -p dynamic-config-node/artefacts dynamic-config-node-remote/artefacts
+          cp artefacts/node/*.node dynamic-config-node/artefacts/
+          cp artefacts/node-remote/*.node dynamic-config-node-remote/artefacts/
+          ls -la dynamic-config-node/artefacts dynamic-config-node-remote/artefacts
       # One package per platform, plus the wrapper that depends on them
       # optionally — the shape npm has for native addons, and the reason an
       # install downloads one binary rather than five.
       - name: the per-platform packages
-        working-directory: dynamic-config-node
-        run: node scripts/pack-platforms.mjs
+        run: |
+          node dynamic-config-node/scripts/pack-platforms.mjs
+          node dynamic-config-node/scripts/pack-platforms.mjs dynamic-config-node-remote
       - name: publish
-        working-directory: dynamic-config-node
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          for package in npm/*/; do
+          # The base package first, whole: the stores package declares it as
+          # a peer dependency, and a peer that is not on the registry is a
+          # warning on every install of the other.
+          for package in dynamic-config-node/npm/*/ dynamic-config-node-remote/npm/*/; do
             echo "── $package"
             npm publish "$package" --provenance --access public
           done
-          # The wrapper last: it names the per-platform packages as
+          # The wrappers last: each names its per-platform packages as
           # optional dependencies, and a wrapper on the registry whose
           # dependencies are not there yet is an install that fails.
-          npm publish . --provenance --access public
+          npm publish dynamic-config-node --provenance --access public
+          npm publish dynamic-config-node-remote --provenance --access public
 
   tag-and-release:
     name: tag and GitHub release

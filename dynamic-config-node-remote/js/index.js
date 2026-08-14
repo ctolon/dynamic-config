@@ -14,7 +14,7 @@ const { createRequire } = require("node:module");
 const load = createRequire(__filename);
 
 function addon() {
-  const platform = `@dynamic-config/remote-${process.platform}-${process.arch}${
+  const platform = `dynamic-config-node-remote-${process.platform}-${process.arch}${
     process.platform === "linux" ? "-glibc" : ""
   }`;
 
@@ -29,7 +29,7 @@ function addon() {
   }
 
   throw new Error(
-    `@dynamic-config/remote has no binary for ${process.platform} ${process.arch}. ` +
+    `dynamic-config-node-remote has no binary for ${process.platform} ${process.arch}. ` +
       `Neither the platform package (${platform}) nor a local build is here.`,
   );
 }
@@ -37,7 +37,7 @@ function addon() {
 const native = addon();
 
 /** The base package's error, so a caller catches one type and not two. */
-const { DynamicConfigError } = require("dynamic-config");
+const { DynamicConfigError } = require("dynamic-config-node");
 
 function unwrap(outcome) {
   if (outcome.ok) {

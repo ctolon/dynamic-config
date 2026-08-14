@@ -460,7 +460,7 @@ jobs:
       - name: the base package, linked the way npm would install it
         run: |
           mkdir -p dynamic-config-node-remote/node_modules
-          ln -sfn ../../dynamic-config-node dynamic-config-node-remote/node_modules/dynamic-config
+          ln -sfn ../../dynamic-config-node dynamic-config-node-remote/node_modules/dynamic-config-node
       # The base package needs its own binary too: the stores' suite imports
       # `DynamicConfigError` from it.
       - run: cargo build -p dynamic-config-node --release

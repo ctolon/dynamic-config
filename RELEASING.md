@@ -1,8 +1,8 @@
 # Releasing
 
 Eighteen crates. Fourteen publish to crates.io in four waves, versioned
-together; the Python wheels follow in a fifth, on a version of their
-own.
+together; the Python wheels follow in a fifth and the npm packages in a
+sixth, each on a version of its own.
 
 The waves are dependency order: the macro and the `no_std` crate, then
 the engine, then `dynamic-config-store-core` — which every store crate
@@ -237,6 +237,47 @@ nowhere else.
 Check docs.rs built each crate with `all-features = true`, so feature-gated
 items carry their badges — and that each companion rendered *its own* README
 rather than the workspace one.
+
+## The npm wave
+
+Two packages — `dynamic-config-node` and `dynamic-config-node-remote` —
+built by the `addons` matrix and published by `publish-npm`, after the
+crates are on crates.io. They version together and independently of the
+crates, for the reason the wheels do: each embeds the engine rather than
+depending on a published version of it.
+
+**The name is not `dynamic-config`.** That belongs to an unrelated
+package by another author, so this takes the qualified name — the same
+answer `dynamic-config-py` is on PyPI. Checked before the first release
+rather than discovered during it.
+
+**Five native runners, not cross-compilation.** The addon links against
+the platform's own C runtime, and a cross build that "works" is one
+nobody has loaded on the machine it targets. Each runner builds both
+addons, runs both suites *against the artefact that will ship*, and
+uploads it.
+
+**One package per platform, plus a wrapper.** `scripts/pack-platforms.mjs`
+writes `dynamic-config-node-linux-x64-glibc` and its four siblings, and
+rewrites the wrapper's `optionalDependencies` to name exactly what was
+built. npm installs only the one whose `os`/`cpu` match, so an install
+downloads one binary rather than five. The platform packages publish
+first: a wrapper whose optional dependencies are not on the registry yet
+is an install that fails.
+
+**What an operator has to have ready**, and neither is in the
+repository:
+
+1. `NPM_TOKEN` as a repository secret, with publish rights.
+2. Nothing else — the packages are unscoped, so no organisation is
+   involved, and `--provenance` needs only the `id-token: write` the job
+   already declares.
+
+A platform whose build failed is a platform the release does not ship:
+the packing script warns and leaves it out of `optionalDependencies`
+rather than publishing a wrapper that points at a package nobody
+uploaded. That is a partial release, and the fix is a rerun — npm
+versions are as permanent as PyPI's.
 
 ## Version policy
 

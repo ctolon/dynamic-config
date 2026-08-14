@@ -3,7 +3,7 @@
 //! A second package for the reason they are a second wheel in Python: a
 //! gRPC stack, an AWS SDK and three HTTP clients in every `npm install
 //! dynamic-config` is not a default anybody asked for. `npm install
-//! @dynamic-config/remote` is the opt-in.
+//! dynamic-config-node-remote` is the opt-in.
 //!
 //! # What a store is here
 //!
@@ -15,8 +15,8 @@
 //! somebody wrote in JavaScript.
 //!
 //! ```js
-//! import { DynamicConfig } from "dynamic-config"
-//! import { Etcd } from "@dynamic-config/remote"
+//! import { DynamicConfig } from "dynamic-config-node"
+//! import { Etcd } from "dynamic-config-node-remote"
 //!
 //! const store = new Etcd({ endpoints: ["http://127.0.0.1:2379"], key: "myapp/db.json" })
 //!

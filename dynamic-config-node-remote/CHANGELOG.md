@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to `@dynamic-config/remote` are documented here. The
+All notable changes to `dynamic-config-node-remote` are documented here. The
 format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 This package versions **with** `dynamic-config`: it hands documents to the

@@ -5,11 +5,11 @@ The Node.js binding has **a book of its own**:
 ### → [dynamic-config for Node.js](https://ctolon.github.io/dynamic-config/node/)
 
 ```sh
-npm install dynamic-config
+npm install dynamic-config-node
 ```
 
 ```ts
-import { DynamicConfig, zodValidator } from "dynamic-config"
+import { DynamicConfig, zodValidator } from "dynamic-config-node"
 import { z } from "zod"
 
 const Database = z.object({ host: z.string(), port: z.number().default(5432) })

@@ -12,7 +12,7 @@
       // The examples import the package by name, the way a reader would
       // copy them — and typecheck against the definitions in this
       // repository rather than against a published version of them.
-      "dynamic-config": ["../js/index.d.ts"]
+      "dynamic-config-node": ["../js/index.d.ts"]
     }
   },
   "include": ["10-nestjs/**/*.ts", "11-nextjs/**/*.ts"]

@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to the `dynamic-config` npm package are documented
+All notable changes to the `dynamic-config-node` npm package are documented
 here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 This package versions independently of the Rust crates: it *embeds* the
@@ -16,6 +16,11 @@ release has nothing in it for a Node user.
 
 The first release: the engine, the schema door, the watcher and the whole
 diagnostic surface, through Node-API.
+
+The package is **`dynamic-config-node`**, not `dynamic-config`: that name
+belongs to an unrelated package by another author. The qualified name is
+the same answer `dynamic-config-py` is on PyPI, and the import is the
+package name.
 
 ### Added
 

@@ -1,16 +1,16 @@
-# @dynamic-config/remote
+# dynamic-config-node-remote
 
 The eight Rust remote stores for [`dynamic-config`](../dynamic-config-node)
 — **etcd, Consul, Vault, NATS, Redis, S3, Firestore and git** — as a
 second package.
 
 ```sh
-npm install dynamic-config @dynamic-config/remote
+npm install dynamic-config-node dynamic-config-node-remote
 ```
 
 ```ts
-import { DynamicConfig } from "dynamic-config"
-import { Etcd, useStore } from "@dynamic-config/remote"
+import { DynamicConfig } from "dynamic-config-node"
+import { Etcd, useStore } from "dynamic-config-node-remote"
 
 const config = new DynamicConfig({ key: "db", validate })
 await config.file("config.toml").init()

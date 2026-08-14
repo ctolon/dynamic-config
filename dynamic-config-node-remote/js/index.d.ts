@@ -9,7 +9,7 @@
  * answer.
  */
 
-import type { DynamicConfig, Document } from "dynamic-config";
+import type { DynamicConfig, Document } from "dynamic-config-node";
 
 /** What every call answers: a value, or the failure with its kind. */
 export interface Outcome<T> {

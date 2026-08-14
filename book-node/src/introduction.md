@@ -1,15 +1,15 @@
 # Node.js Bindings
 
-`dynamic-config` on npm pairs this engine with the schema you already
+`dynamic-config-node` on npm pairs this engine with the schema you already
 write: **Rust resolves, your schema validates, JavaScript reads a cached
 object.**
 
 ```sh
-npm install dynamic-config
+npm install dynamic-config-node
 ```
 
 ```ts
-import { DynamicConfig, zodValidator } from "dynamic-config"
+import { DynamicConfig, zodValidator } from "dynamic-config-node"
 import { z } from "zod"
 
 const Database = z.object({ host: z.string(), port: z.number().default(5432) })

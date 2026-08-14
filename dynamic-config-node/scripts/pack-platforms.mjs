@@ -21,7 +21,13 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const root = join(here, "..");
+
+/**
+ * Which package to pack: this one by default, or the one named as an
+ * argument. Two packages ship native binaries and their layout is
+ * identical, so one script serves both rather than two that drift.
+ */
+const root = process.argv[2] ? join(here, "..", "..", process.argv[2]) : join(here, "..");
 const wrapper = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 
 /** Every target the package claims, and what npm calls that platform. */

@@ -1,14 +1,18 @@
-# dynamic-config (Node.js)
+# dynamic-config-node
 
 Hot-reloadable configuration for Node.js: **Rust resolves, your schema
 validates, JavaScript reads a cached object.**
 
+> The package is `dynamic-config-node`: `dynamic-config` on npm belongs to
+> an unrelated package by another author. Same answer as
+> `dynamic-config-py` on PyPI, and the import is the package name.
+
 ```sh
-npm install dynamic-config
+npm install dynamic-config-node
 ```
 
 ```ts
-import { DynamicConfig, zodValidator } from "dynamic-config"
+import { DynamicConfig, zodValidator } from "dynamic-config-node"
 import { z } from "zod"
 
 const Database = z.object({ host: z.string(), port: z.number().default(5432) })
@@ -98,7 +102,18 @@ config.setRemote(() => latest, "our config service")
 The eight Rust stores — etcd, Consul, Vault, NATS, Redis, S3, Firestore,
 git — are **not in this package**, for the reason they are a second wheel
 in Python: a gRPC stack and an AWS SDK in every `npm install` is not a
-default. They arrive as `@dynamic-config/remote`.
+default. They are a second package:
+
+```sh
+npm install dynamic-config-node dynamic-config-node-remote
+```
+
+```ts
+import { Etcd, useStore } from "dynamic-config-node-remote"
+
+const installed = await useStore(config, new Etcd(["http://etcd:2379"], "myapp/db.json"))
+await installed.refresh()   // later: a timer, a signal, a webhook
+```
 
 ## Two things this binding deliberately does not have
 

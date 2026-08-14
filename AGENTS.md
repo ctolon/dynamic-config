@@ -243,7 +243,7 @@ it.
 |---|---|
 | what the crate does, and why each decision was made | `book/src/` — the book is the specification; `README.md` is the storefront |
 | the same, for the Python binding | `book-python/src/` — its own book since 0.6.1, published at `/dynamic-config/python/`. The Rust book keeps one stub page that links to it |
-| the same, for the Node binding | `book-node/src/`, published at `/dynamic-config/node/`; the crate is `dynamic-config-node`, the facade is `dynamic-config-node/js/`, and the npm package is `dynamic-config` |
+| the same, for the Node binding | `book-node/src/`, published at `/dynamic-config/node/`; the crate is `dynamic-config-node`, the facade is `dynamic-config-node/js/`, and the npm package is `dynamic-config-node` |
 | what is deliberately absent, and what would reopen it | `book/src/limitations.md` |
 | what might still be built | `ROADMAP.md` |
 | how a contributor gets started, and what every module does | `docs/CONTRIBUTOR-ONBOARDING.md` |

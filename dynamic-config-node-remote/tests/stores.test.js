@@ -14,7 +14,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const stores = require("../js/index.js");
-const { DynamicConfigError } = require("dynamic-config");
+const { DynamicConfigError } = require("dynamic-config-node");
 
 /** Every store, constructed the smallest way each one allows. */
 function each() {
@@ -112,7 +112,7 @@ test("fetchFrom throws the base package's error", async () => {
 });
 
 test("useStore installs a document and keeps it current", async () => {
-  const { DynamicConfig } = require("dynamic-config");
+  const { DynamicConfig } = require("dynamic-config-node");
 
   // A store of our own with the same two methods the eight have: that is
   // the whole contract, and it is what makes `useStore` testable without a

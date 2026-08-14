@@ -60,15 +60,15 @@ A fetch that fails leaves the last good document serving and moves
 
 etcd, Consul, Vault, NATS, Redis, S3, Firestore and git are **not in this
 package** — a gRPC stack, an AWS SDK and three HTTP clients in every
-`npm install dynamic-config` is not a default anybody asked for. They are
+`npm install dynamic-config-node` is not a default anybody asked for. They are
 a second one:
 
 ```sh
-npm install @dynamic-config/remote
+npm install dynamic-config-node-remote
 ```
 
 ```ts
-import { Etcd, useStore } from "@dynamic-config/remote"
+import { Etcd, useStore } from "dynamic-config-node-remote"
 
 const store = new Etcd(["http://etcd:2379"], "myapp/db.json")
 const installed = await useStore(config, store)

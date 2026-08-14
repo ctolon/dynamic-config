@@ -28,7 +28,7 @@ const load = createRequire(__filename);
  * somebody with `MODULE_NOT_FOUND` and a path they have never seen.
  */
 function addon() {
-  const platform = `dynamic-config-${process.platform}-${process.arch}${
+  const platform = `dynamic-config-node-${process.platform}-${process.arch}${
     process.platform === "linux" ? "-glibc" : ""
   }`;
 
@@ -43,7 +43,7 @@ function addon() {
   }
 
   throw new Error(
-    `dynamic-config has no binary for ${process.platform} ${process.arch}. ` +
+    `dynamic-config-node has no binary for ${process.platform} ${process.arch}. ` +
       `Neither the platform package (${platform}) nor a local build ` +
       "(index.node, from `just node`) is here. The published platforms are " +
       "linux x64/arm64 (glibc), darwin x64/arm64 and win32 x64.",

@@ -225,7 +225,7 @@ node-remote:
     cp target/debug/libdynamic_config_node_remote.so dynamic-config-node-remote/index.node
     # The base package, linked the way npm would install it.
     mkdir -p dynamic-config-node-remote/node_modules
-    ln -sfn ../../dynamic-config-node dynamic-config-node-remote/node_modules/dynamic-config
+    ln -sfn ../../dynamic-config-node dynamic-config-node-remote/node_modules/dynamic-config-node
     cd dynamic-config-node-remote && node --test "tests/*.test.js"
 
 # Chaos: a store unplugged mid-watch, and put back.

@@ -27,7 +27,7 @@ bumps the patch. A change to the minimum supported Rust version is breaking.
 
 ### Added
 
-- **Node.js bindings**, as `dynamic-config` on npm: the engine, the
+- **Node.js bindings**, as `dynamic-config-node` on npm: the engine, the
   watcher, the runtime layers, remote sources written in JavaScript and
   the whole diagnostic surface, through Node-API. A validator is a
   function, so Zod, Ajv or a plain function of your own all work and none
@@ -47,7 +47,7 @@ bumps the patch. A change to the minimum supported Rust version is breaking.
   JavaScript half is ordinary code that a version can break. The release
   workflow gained an npm wave: five native runners, one prebuilt binary
   each, published as optional dependencies with provenance.
-- **`@dynamic-config/remote`**: the eight Rust stores for Node — etcd,
+- **`dynamic-config-node-remote`**: the eight Rust stores for Node — etcd,
   Consul, Vault, NATS, Redis, S3, Firestore and git — as a second package,
   for the reason they are a second wheel in Python. Each is a class with
   an async `fetch()` and a `describe()`, which is the shape the base
@@ -56,6 +56,23 @@ bumps the patch. A change to the minimum supported Rust version is breaking.
   bridge: a round trip must not sit on the event loop, and the remote
   layer is filled from a worker thread and must be handed a synchronous
   answer.
+
+### Changed
+
+- **A watch refused before its first round trip no longer reports the
+  store as unreachable**, in `dynamic-config-etcd` and
+  `dynamic-config-nats`. `RemoteStatus::reachable()` is *whether the store
+  answered the last time it was asked*, and a source with no format or an
+  unwatchable key shape never asks — so `Some(false)` there was a status
+  saying something untrue about a store that may be perfectly healthy.
+  `dynamic-config-redis` and `dynamic-config-s3` already behaved this way;
+  0.6.1's audit of all seven watch loops settled the split. Each crate's
+  changelog carries its half, and every failure branch is now a table in
+  its own crate's documentation.
+
+  `just chaos` is the evidence: toxiproxy in front of a store that never
+  restarts, three loop shapes, and the pair an alert reads — `remote_up`
+  goes to zero *while the staleness clock keeps running*.
 
 ### Fixed
 

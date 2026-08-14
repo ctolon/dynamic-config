@@ -9,7 +9,7 @@
  * and deciding *which fields* is a security question, not a plumbing one.
  */
 
-import { DynamicConfig } from "dynamic-config";
+import { DynamicConfig } from "dynamic-config-node";
 
 export interface AppConfig {
   /** Sent to the browser. */

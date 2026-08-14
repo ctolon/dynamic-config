@@ -1,8 +1,19 @@
 {
-  "name": "@dynamic-config/remote",
+  "name": "dynamic-config-node-remote",
   "version": "0.0.1",
   "description": "The eight Rust remote stores for dynamic-config's Node bindings",
-  "keywords": ["config", "configuration", "etcd", "consul", "vault", "nats", "redis", "s3", "firestore", "git"],
+  "keywords": [
+    "config",
+    "configuration",
+    "etcd",
+    "consul",
+    "vault",
+    "nats",
+    "redis",
+    "s3",
+    "firestore",
+    "git"
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -15,9 +26,13 @@
   },
   "main": "js/index.js",
   "types": "js/index.d.ts",
-  "files": ["js/", "README.md", "LICENSE"],
+  "files": [
+    "js/",
+    "README.md",
+    "LICENSE"
+  ],
   "peerDependencies": {
-    "dynamic-config": "^0.0.1"
+    "dynamic-config-node": "^0.0.1"
   },
   "scripts": {
     "test": "node --test \"tests/*.test.js\"",

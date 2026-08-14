@@ -104,8 +104,8 @@ schema export, units, the last-known-good cache, testing patterns — lives in
 | [`dynamic-config-cli`](dynamic-config-cli) | `explain` and `diff` on the command line — `cargo install dynamic-config-cli` | Experimental |
 | [`dynamic-config-python`](dynamic-config-python) | Python bindings — `pip install dynamic-config-py`; a dataclass, Pydantic or msgspec validates | Experimental |
 | [`dynamic-config-python-remote`](dynamic-config-python-remote) | the stores for Python — `pip install "dynamic-config-py[remote]"` | Experimental |
-| [`dynamic-config-node`](dynamic-config-node) | Node.js bindings — `npm install dynamic-config`; Zod, Ajv or a function of your own validates | Experimental |
-| [`dynamic-config-node-remote`](dynamic-config-node-remote) | the stores for Node — `npm install @dynamic-config/remote` | Experimental |
+| [`dynamic-config-node`](dynamic-config-node) | Node.js bindings — `npm install dynamic-config-node`; Zod, Ajv or a function of your own validates | Experimental |
+| [`dynamic-config-node-remote`](dynamic-config-node-remote) | the stores for Node — `npm install dynamic-config-node-remote` | Experimental |
 
 `dynamic-config-store-core` is also published, and is not in the table: it
 is machinery the store crates share rather than something to depend on.
