@@ -58,7 +58,7 @@ function unwrap(outcome) {
  * result over synchronously.
  *
  * ```js
- * const store = new Etcd({ endpoints: ["http://etcd:2379"], key: "myapp/db.json" })
+ * const store = new Etcd(["http://etcd:2379"], "myapp/db.json")
  *
  * const handle = await useStore(config, store) // fetch, install, and it is live
  *

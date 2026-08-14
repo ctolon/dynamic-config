@@ -152,7 +152,7 @@ same engine.
 
 ## Examples
 
-Twelve, in [`examples/`](examples/): a quick start, layering, watching,
+Twelve, in [`examples/`](https://github.com/ctolon/dynamic-config/tree/main/dynamic-config-node/examples): a quick start, layering, watching,
 diagnostics, Express, Fastify, Zod/Ajv/no-schema side by side, a NestJS
 provider, Next.js server components, and the React one that draws the
 browser boundary rather than pretending there is none. The runnable ones

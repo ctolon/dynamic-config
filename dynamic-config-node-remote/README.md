@@ -1,8 +1,10 @@
 # dynamic-config-node-remote
 
-The eight Rust remote stores for [`dynamic-config`](../dynamic-config-node)
-— **etcd, Consul, Vault, NATS, Redis, S3, Firestore and git** — as a
-second package.
+The eight Rust remote stores for
+[`dynamic-config-node`](https://ctolon.github.io/dynamic-config/node/) —
+**etcd, Consul, Vault, NATS, Redis, S3, Firestore and git** — as a second
+package. The chapter that covers them is
+[Remote stores](https://ctolon.github.io/dynamic-config/node/remote-stores.html).
 
 ```sh
 npm install dynamic-config-node dynamic-config-node-remote

@@ -15,12 +15,16 @@
     "git"
   ],
   "license": "MIT",
+  "author": "Cevat Batuhan Tolon <cevatbatuhan.tolon@gmail.com>",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/ctolon/dynamic-config.git",
     "directory": "dynamic-config-node-remote"
   },
   "homepage": "https://ctolon.github.io/dynamic-config/node/remote-stores.html",
+  "bugs": {
+    "url": "https://github.com/ctolon/dynamic-config/issues"
+  },
   "engines": {
     "node": ">= 18"
   },

@@ -596,3 +596,117 @@ fn every_example_is_in_the_books_table() {
          are {examples}"
     );
 }
+
+/// Every store's documented call is the call it takes.
+///
+/// `#[napi(constructor)]` generates a **positional** constructor, so a store
+/// whose summary line has drifted is not a cosmetic problem: a caller
+/// following it passes a timeout where the TLS options go. Three had drifted
+/// by 0.6.1 — Vault's `format`, Redis's `tls`, Firestore's `accessTokenFn`
+/// and `tls` — each an argument that could only be found by reading the Rust,
+/// which is not where a JavaScript caller looks.
+///
+/// `a | b | c` in a summary stands for the three slots exactly one of which
+/// is filled: a key, a list of keys, or a prefix.
+#[test]
+fn every_store_documents_the_arguments_it_takes() {
+    let Some(source) = read(&repo().join("dynamic-config-node-remote/src/lib.rs")) else {
+        eprintln!("skipped: not a repository checkout");
+        return;
+    };
+
+    /// `timeout_ms: Option<u32>` → `timeoutMs?`.
+    fn parameter(line: &str) -> Option<String> {
+        let (name, rest) = line.trim().trim_end_matches(',').split_once(':')?;
+        let mut camel = String::new();
+        let mut upper = false;
+
+        for character in name.trim().chars() {
+            match character {
+                '_' => upper = true,
+                other if upper => {
+                    camel.extend(other.to_uppercase());
+                    upper = false;
+                }
+                other => camel.push(other),
+            }
+        }
+
+        if rest.contains("Option<") {
+            camel.push('?');
+        }
+
+        Some(camel)
+    }
+
+    let lines: Vec<&str> = source.lines().collect();
+    let mut wrong: Vec<String> = Vec::new();
+    let mut checked = 0;
+
+    for (number, line) in lines.iter().enumerate() {
+        let trimmed = line.trim();
+        let Some(documented) = trimmed
+            .strip_prefix("/// `(")
+            .and_then(|rest| rest.strip_suffix(")`"))
+        else {
+            continue;
+        };
+
+        // The constructor this line is about, and the parameters it takes.
+        let Some(opens) = lines[number..]
+            .iter()
+            .position(|line| line.trim() == "pub fn new(")
+        else {
+            continue;
+        };
+        let start = number + opens + 1;
+        let taken: Vec<String> = lines[start..]
+            .iter()
+            .take_while(|line| !line.trim().starts_with(") ->"))
+            .filter(|line| !line.trim().starts_with("//"))
+            .filter_map(|line| parameter(line))
+            .collect();
+
+        // `key | keys | prefix` is three optional slots written as the one
+        // choice a caller actually makes — so each alternative is optional
+        // whether or not the summary bothered to say so.
+        let claimed: Vec<String> = documented
+            .split(',')
+            .flat_map(|entry| {
+                let alternatives = entry.contains('|');
+
+                entry.split('|').map(move |name| {
+                    let name = name.trim();
+
+                    if alternatives && !name.ends_with('?') {
+                        format!("{name}?")
+                    } else {
+                        name.to_owned()
+                    }
+                })
+            })
+            .collect();
+
+        checked += 1;
+
+        if claimed != taken {
+            wrong.push(format!(
+                "dynamic-config-node-remote/src/lib.rs:{}: says ({}), and it takes ({})",
+                number + 1,
+                claimed.join(", "),
+                taken.join(", ")
+            ));
+        }
+    }
+
+    assert!(
+        checked >= 8,
+        "found {checked} documented constructors; there are eight stores, so \
+         this test has stopped finding them and is passing on nothing"
+    );
+    assert!(
+        wrong.is_empty(),
+        "a store's summary line is not its signature:\n  {}",
+        wrong.join("\n  ")
+    );
+}

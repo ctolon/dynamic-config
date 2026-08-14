@@ -49,10 +49,15 @@ dynamic = ["version"]
 dynamic_config = "dynamic_config.pytest"
 
 [project.urls]
-Homepage = "https://github.com/ctolon/dynamic-config"
+# Home is the Python book, not the repository: somebody arriving from PyPI
+# wants the documentation for *this* package, and a Rust workspace's front
+# page is a long way from `pip install`. The repository is one row down,
+# under the label that says what it is.
+Homepage = "https://ctolon.github.io/dynamic-config/python/"
+Documentation = "https://ctolon.github.io/dynamic-config/python/reference.html"
 Repository = "https://github.com/ctolon/dynamic-config"
-Documentation = "https://ctolon.github.io/dynamic-config/python/"
 Changelog = "https://github.com/ctolon/dynamic-config/blob/main/dynamic-config-python/CHANGELOG.md"
+Issues = "https://github.com/ctolon/dynamic-config/issues"
 
 [project.optional-dependencies]
 # `pip install dynamic-config-py` gives you dataclass schemas and the whole

@@ -19,7 +19,7 @@
 //! import { Etcd, useStore } from "dynamic-config-node-remote"
 //!
 //! const config = new DynamicConfig({ key: "db" })
-//! const store = new Etcd({ endpoints: ["http://127.0.0.1:2379"], key: "myapp/db.json" })
+//! const store = new Etcd(["http://127.0.0.1:2379"], "myapp/db.json")
 //!
 //! // Fetches, installs, and hands back the handle a later refresh needs.
 //! const handle = await useStore(config, store)
@@ -226,7 +226,7 @@ enum Shape {
 }
 
 impl Shape {
-    /// `{ key }`, `{ keys }` or `{ prefix }` — exactly one of the three.
+    /// `key`, `keys` or `prefix` — exactly one of the three.
     fn of(
         key: Option<String>,
         keys: Option<Vec<String>>,
@@ -649,7 +649,7 @@ pub struct Consul {
 
 #[napi]
 impl Consul {
-    /// `{ address, key | keys | prefix, format?, token?, tokenFn?, tls?, timeoutMs? }`
+    /// `(address, key | keys | prefix, format?, token?, tokenFn?, tls?, timeoutMs?)`
     ///
     /// `token` is a string somebody pasted into a deployment; `tokenFn` is
     /// a function called on the event loop before each fetch, for a
@@ -813,7 +813,7 @@ pub struct Vault {
 
 #[napi]
 impl Vault {
-    /// `{ address, mount, path | paths, token?, tokenFn?, tls?, timeoutMs? }`
+    /// `(address, mount, path | paths, format?, token?, tokenFn?, tls?, timeoutMs?)`
     ///
     /// `tokenFn` is where Vault differs from the others in practice: its
     /// tokens have leases, and a process that runs longer than one needs a
@@ -922,7 +922,7 @@ pub struct Redis {
 
 #[napi]
 impl Redis {
-    /// `{ url, key | keys | prefix, format?, timeoutMs? }`
+    /// `(url, key | keys | prefix, format?, tls?, timeoutMs?)`
     ///
     /// The credential rides in the URL — `redis://user:password@host` —
     /// which is where Redis puts it and where every Redis client reads it.
@@ -1077,7 +1077,7 @@ pub struct Etcd {
 
 #[napi]
 impl Etcd {
-    /// `{ endpoints, key | keys | prefix, format?, username?, password?, timeoutMs? }`
+    /// `(endpoints, key | keys | prefix, format?, username?, password?, timeoutMs?)`
     #[napi(constructor)]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -1234,7 +1234,7 @@ pub struct Nats {
 
 #[napi]
 impl Nats {
-    /// `{ server, bucket, key | keys, format?, timeoutMs? }`
+    /// `(server, bucket, key | keys, format?, timeoutMs?)`
     #[napi(constructor)]
     pub fn new(
         server: String,
@@ -1351,7 +1351,7 @@ pub struct S3 {
 
 #[napi]
 impl S3 {
-    /// `{ bucket, key | keys | prefix, format?, timeoutMs? }`
+    /// `(bucket, key | keys | prefix, format?, timeoutMs?)`
     ///
     /// Credentials, region and endpoint come from **the environment**, the
     /// way every AWS SDK reads them: `AWS_ACCESS_KEY_ID`, `AWS_REGION`,
@@ -1441,7 +1441,7 @@ pub struct Firestore {
 
 #[napi]
 impl Firestore {
-    /// `{ project, path | paths, accessToken?, timeoutMs? }`
+    /// `(project, path | paths, accessToken?, accessTokenFn?, tls?, timeoutMs?)`
     ///
     /// A Firestore document is a typed map rather than a text file, so
     /// there is no format to choose. `accessToken` is a token minted
@@ -1540,7 +1540,7 @@ pub struct Git {
 
 #[napi]
 impl Git {
-    /// `{ url, path | paths | prefix, branch? | tag? | commit?, format?, token?, timeoutMs? }`
+    /// `(url, path | paths | prefix, branch? | tag? | commit?, format?, token?, timeoutMs?)`
     #[napi(constructor)]
     #[allow(clippy::too_many_arguments)]
     pub fn new(

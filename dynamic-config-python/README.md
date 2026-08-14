@@ -278,7 +278,8 @@ validation rather than shrugging.
 
 ## Examples
 
-Eighteen runnable scripts in [`examples/`](examples) — the quick start,
+Eighteen runnable scripts in
+[`examples/`](https://github.com/ctolon/dynamic-config/tree/main/dynamic-config-python/examples) — the quick start,
 layering and precedence, watching, asyncio (single- and multi-file), the
 decorator (plain, and several configurations on one event loop),
 multi-tenant configuration, secrets and recovery, the diagnostics tour,
