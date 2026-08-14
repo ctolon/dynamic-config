@@ -25,6 +25,8 @@ bumps the patch. A change to the minimum supported Rust version is breaking.
 
 ## [Unreleased]
 
+## [0.6.1] — 2026-08-14
+
 ### Changed
 
 - **A watch refused before its first round trip no longer reports the server
@@ -184,7 +186,8 @@ Initial release.
 - Credentials through `async-nats`'s own `ConnectOptions` (re-exported), and
   `from_client` for a connection the program already has.
 
-[Unreleased]: https://github.com/ctolon/dynamic-config/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/ctolon/dynamic-config/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/ctolon/dynamic-config/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/ctolon/dynamic-config/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/ctolon/dynamic-config/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/ctolon/dynamic-config/compare/v0.3.0...v0.4.0

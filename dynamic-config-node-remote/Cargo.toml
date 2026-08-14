@@ -34,14 +34,14 @@ dynamic-config-store-core = { workspace = true }
 # `tls` on the two that keep their TLS stack behind a feature: an addon is
 # compiled weeks before anybody installs it, so there is no later moment at
 # which a user could turn one on.
-dynamic-config-consul = { version = "=0.6.0", path = "../dynamic-config-consul" }
-dynamic-config-etcd = { version = "=0.6.0", path = "../dynamic-config-etcd", features = ["tls"] }
-dynamic-config-firestore = { version = "=0.6.0", path = "../dynamic-config-firestore" }
-dynamic-config-git = { version = "=0.6.0", path = "../dynamic-config-git" }
-dynamic-config-nats = { version = "=0.6.0", path = "../dynamic-config-nats" }
-dynamic-config-redis = { version = "=0.6.0", path = "../dynamic-config-redis", features = ["tls"] }
-dynamic-config-s3 = { version = "=0.6.0", path = "../dynamic-config-s3" }
-dynamic-config-vault = { version = "=0.6.0", path = "../dynamic-config-vault" }
+dynamic-config-consul = { version = "=0.6.1", path = "../dynamic-config-consul" }
+dynamic-config-etcd = { version = "=0.6.1", path = "../dynamic-config-etcd", features = ["tls"] }
+dynamic-config-firestore = { version = "=0.6.1", path = "../dynamic-config-firestore" }
+dynamic-config-git = { version = "=0.6.1", path = "../dynamic-config-git" }
+dynamic-config-nats = { version = "=0.6.1", path = "../dynamic-config-nats" }
+dynamic-config-redis = { version = "=0.6.1", path = "../dynamic-config-redis", features = ["tls"] }
+dynamic-config-s3 = { version = "=0.6.1", path = "../dynamic-config-s3" }
+dynamic-config-vault = { version = "=0.6.1", path = "../dynamic-config-vault" }
 # Floors that resolve, rather than a bare `"3"`: the minimal-versions
 # gate picks the *lowest* version of every direct dependency, and
 # `napi 3.0` wants a `napi-build` newer than `"2"` would pick.
