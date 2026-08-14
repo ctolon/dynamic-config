@@ -25,9 +25,11 @@ Python bindings, and **0.6 is the clearing release** — everything that had
 been waiting for a reason other than "nobody has asked", done in one wave so
 the surface stops accumulating.
 
-**0.6 is built and unreleased.** What landed is not here: the changelogs
-carry it, [README.md](README.md) describes the crate as it is, and this
-file keeps only what is still open. Three of its items were answered by
+**0.6 shipped** — sixteen crates on crates.io, two wheels on PyPI, the
+book published, the instruction-count gate armed with a committed
+baseline. What landed is not here: the changelogs carry it,
+[README.md](README.md) describes the crate as it is, and this file keeps
+only what is still open. Three of its items were answered by
 *measurement* rather than by code, and each answer is written where it
 belongs rather than here:
 
@@ -47,17 +49,21 @@ belongs rather than here:
   worse than today's sentence, and the state parameter leaks into four
   public signatures.
 
-**0.6 is complete.** Every item in it either landed or was answered by
-measurement; the entries below are what those answers left behind, and none
-of them is a design question any more.
+**0.6 is complete, and so are the two remainders it left.** Instruction
+counts: the workflow ran, the baseline is committed, and the gate now
+fails a pull request that regresses past the limits
+`benches/instructions.rs` declares. A remote fetch's reporting:
+`RemoteSink::failed` and `Attempts` are wired through `reporting_to` in
+all seven network stores, and git needs none of it because its watch is a
+poll and a poll is a fetch.
 
-1. [Instruction counts](#instruction-counts-not-just-wall-clock-own) — the
-   harness and the workflow landed and have **never executed**: there is no
-   valgrind where they were built. The gate arms itself the moment a
-   maintainer runs the workflow once and commits the baseline it uploads.
-2. [What a remote fetch does not yet report](#what-a-remote-fetch-does-not-yet-report-own)
-   — the door exists now (`RemoteSink::failed`); what is left is one call at
-   each failure site in the seven network watch loops.
+**0.6.1 is the release being built now**, and it is a maintenance one by
+construction — a patch, so nothing in it may change a public signature.
+What it carries: the failure-branch *audit* behind the wiring above, with
+chaos tests that unplug each store; a documentation and manifest sweep; a
+Python book of its own; msgspec as a fifth Python schema; Node.js
+bindings at 0.0.1; and a third-party dependency audit across all three
+ecosystems.
 
 Two 0.6 answers are worth keeping in view because they will be asked again:
 
@@ -92,29 +98,31 @@ the answer is probably per-crate entry *points* rather than fourteen books.
 
 ## Telemetry
 
-### What a remote fetch does not yet report **[own]**
+### A watch that stopped delivering must not look healthy **[own]**
 
 The reload path, the fetch path, the server's `/metrics` and the Python
-binding all landed; [the book](book/src/telemetry.md) is the surface and the
-changelog is the history. One piece is left, and it is now a wiring job
-rather than a design question.
+binding all landed in 0.6; [the book](book/src/telemetry.md) is the surface
+and the changelog is the history. So did the piece that was open when 0.6
+was written: `RemoteSink::failed`, `Attempts`, and `reporting_to(sink)` on
+all seven network stores. git carries none of it, deliberately — its watch
+is a poll, and a poll is a fetch, which already records itself.
 
-**A watch loop's failed attempts do not reach `RemoteStatus`.** `apply`
-records a delivery, so a working watch keeps the status current — but a loop
-whose stream broke, whose blocking query is erroring or whose credential was
-refused delivers nothing, so `dynamic_config_remote_up` reports the last
-*delivery* rather than the last *attempt*, and a store that stopped answering
-an hour ago looks healthy until something calls `refresh_remote`.
+**What is open is the evidence, and it is a different question.** Whether
+*every* failure branch of seven long-running loops reports cannot be
+answered by reading them — etcd alone routes several branches through one
+helper, and some of its `Err` sites are constructors rather than watch
+failures. Two things settle it: an audit that marks each branch *reports*,
+*deliberately silent* (with the sentence saying why, at the branch), or
+**unreported**; and a chaos test per store that takes the server away
+mid-watch and asserts the pair an alert actually reads — `remote_up` goes
+to zero *while the staleness clock keeps running*, and the last good
+document is still being served.
 
-The door exists: `RemoteSink::failed(&error)`, fenced on the sink's
-generation exactly as `apply` is, moving only the failure streak and the last
-failure so the staleness clock keeps running. What remains is one call at
-each failure site in the seven network watch loops — Consul's retry branch,
-etcd's stream-error and range-read branches, Redis' failed fetch and dead
-subscription, NATS' stream error, and Vault, S3 and Firestore's poll
-failures — reached through one `reporting_to(sink)` builder option per store
-rather than a second `watch` method in seven crates. git needs none of it:
-its watch is a poll, and a poll is a fetch, which already records itself.
+The silence rule is already written in etcd's comments and generalises: a
+recovery that *worked* stays silent, because reporting a five-minute token
+turning over on a healthy cluster would drive `remote_up` to zero and leave
+it there until the next change; a failure the loop survives by retrying
+reports, because that is the case the whole feature exists for.
 
 ---
 
@@ -188,27 +196,38 @@ lands on their crate and not on chapter one, without splitting a link graph
 that is doing real work. It is worth doing when a store's chapter is long
 enough that this is not just a redirect; today two of them are.
 
+**One split is decided and is not this one: a book per *binding*.** A
+Python reader is not a Rust reader who wants a shorter chapter — they are
+somebody who will never write `#[dynamic_config]`, arriving from PyPI into
+twenty chapters of Rust. That argument does not apply to a store crate,
+whose chapter is read by exactly the person who read the builder tour, so
+the store pages stay. 0.6.1 moves the Python chapters to a book of their
+own and the Node binding gets a third; the cross-links between books
+become absolute URLs the link checker verifies, which is the cost.
+
 ---
 
 ## The longer arc
 
-### Instruction counts, not just wall clock **[own]**
+### Instruction counts, not just wall clock **[own]** — shipped
 
 Wall-clock benchmarks on a shared runner cannot gate a regression: the noise
 is larger than the change worth catching. `iai-callgrind` counts instructions
 under valgrind, which is deterministic enough to fail a pull request.
 
-Not landed, and the reason is not "valgrind was missing" — it is that **the
-baseline cannot be produced from a laptop**. iai-callgrind's whole value is
-comparison against a committed baseline; it stores one under `target/`, which
-does not survive between CI runs. Wired up without one, every run would be a
-first run: it would print numbers and never fail. That is exactly the
-benchmark that silently does nothing, and it would cost a lockfile entry and
-a `cargo deny` review to have it.
+**Landed, and the shape is worth keeping** because the same trap waits for
+any deterministic benchmark: iai-callgrind compares against a baseline it
+stores under `target/`, which does not survive between CI runs — so wired up
+without a *committed* one, every run is a first run that prints numbers and
+can never fail. The gate is therefore two-state and says which state it is
+in: no baseline means measure and warn, a baseline means compare and fail
+past the limits `benches/instructions.rs` declares.
 
-What makes it landable is one maintainer action: a CI run on a branch that
-installs valgrind, runs `cargo bench --bench instructions --save-baseline
-main`, and commits what it produced.
+The baseline was produced the only way it can be: one CI run on the runner
+image the comparison will use, its `iai-baseline` artefact committed under
+`dynamic-config/benches/baselines/`. `current_once` is 85 instructions
+there — the number the README's claim about a snapshot read is measured
+against.
 
 ### The road to 1.0 is stabilisation, not features **[own]**
 
