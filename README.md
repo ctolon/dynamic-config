@@ -145,6 +145,11 @@ What will *not* be built, and why, is in
 [Limitations & Not Planned](https://ctolon.github.io/dynamic-config/limitations.html);
 what might be is in [ROADMAP.md](ROADMAP.md).
 
+## Credits
+
+What this engine is built on and whose ideas it took —
+[CREDITS.md](CREDITS.md).
+
 ## License
 
 [MIT](LICENSE).

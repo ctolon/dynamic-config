@@ -1,5 +1,10 @@
 # Limitations & Not Planned
 
+> Several refusals below are stated against Go's Viper, because that is
+> where the behaviour being refused is best known. What this project took
+> *from* it is in
+> [CREDITS.md](https://github.com/ctolon/dynamic-config/blob/main/CREDITS.md).
+
 ## Limitations
 
 - **Every top-level key in a config file must be a table**, with one exception:

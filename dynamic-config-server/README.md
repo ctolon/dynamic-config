@@ -1,9 +1,8 @@
 # dynamic-config-server
 
-An HTTP configuration server for [`dynamic-config`], in the spirit of
-Spring Cloud Config Server: one resolved document per **application** and
-**profile**, handed to a caller that presented a credential scoped to
-that application.
+An HTTP configuration server for [`dynamic-config`]: one resolved document
+per **application** and **profile**, handed to a caller that presented a
+credential scoped to that application.
 
 Run it as a service:
 
