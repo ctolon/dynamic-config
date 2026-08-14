@@ -14,6 +14,7 @@ on:
     paths:
       - "book/**"
       - "book-python/**"
+      - "book-node/**"
       - ".github/workflows/book.yml"
   workflow_dispatch:
 
@@ -52,6 +53,7 @@ jobs:
       # Built second on purpose: `mdbook build book` empties `book/book`
       # first, so the other order would publish an empty `python/`.
       - run: mdbook build book-python --dest-dir book/book/python
+      - run: mdbook build book-node --dest-dir book/book/node
 
       - uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4
         with:

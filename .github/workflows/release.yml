@@ -495,9 +495,114 @@ jobs:
         env:
           MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_TOKEN }}
 
+  addons:
+    name: build the addon (${{ matrix.target }})
+    needs: decide
+    if: needs.decide.outputs.release == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-24.04-arm
+          - target: x86_64-apple-darwin
+            runner: macos-13
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+          - target: x86_64-pc-windows-msvc
+            runner: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+      - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v5
+        with:
+          node-version: "22"
+      # Native runners per architecture rather than cross-compilation: the
+      # addon links against the platform's own C runtime, and a cross build
+      # that "works" is one nobody has loaded on the machine it targets.
+      # The arm64 Linux runner is why this is five jobs and not three.
+      - run: cargo build -p dynamic-config-node --release --target ${{ matrix.target }}
+      - name: name it the way npm expects
+        shell: bash
+        run: |
+          mkdir -p artefacts
+          case "${{ matrix.target }}" in
+            *windows*) built="target/${{ matrix.target }}/release/dynamic_config_node.dll" ;;
+            *apple*)   built="target/${{ matrix.target }}/release/libdynamic_config_node.dylib" ;;
+            *)         built="target/${{ matrix.target }}/release/libdynamic_config_node.so" ;;
+          esac
+          cp "$built" "artefacts/${{ matrix.target }}.node"
+      # The suite, against the binary that will ship — not against a debug
+      # build of the same source. Skipped where the runner cannot execute
+      # what it just built, which is nothing today and would be a
+      # cross-compiled target tomorrow.
+      - name: the suite, against the artefact
+        shell: bash
+        run: |
+          cp "artefacts/${{ matrix.target }}.node" dynamic-config-node/index.node
+          cd dynamic-config-node && node --test "tests/*.test.js"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: addon-${{ matrix.target }}
+          path: artefacts/*.node
+          if-no-files-found: error
+
+  publish-npm:
+    name: publish to npm
+    needs: [decide, addons]
+    if: >-
+      always()
+      && needs.addons.result == 'success'
+      && (needs.decide.outputs.release == 'true' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      # Provenance: npm records *which workflow, at which commit* built the
+      # package, and a consumer can verify it. It costs one permission and
+      # is the whole reason this job is not `npm publish` on a laptop.
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v5
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: addon-*
+          merge-multiple: true
+          path: dynamic-config-node/artefacts
+      # One package per platform, plus the wrapper that depends on them
+      # optionally — the shape npm has for native addons, and the reason an
+      # install downloads one binary rather than five.
+      - name: the per-platform packages
+        working-directory: dynamic-config-node
+        run: node scripts/pack-platforms.mjs
+      - name: publish
+        working-directory: dynamic-config-node
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          for package in npm/*/; do
+            echo "── $package"
+            npm publish "$package" --provenance --access public
+          done
+          # The wrapper last: it names the per-platform packages as
+          # optional dependencies, and a wrapper on the registry whose
+          # dependencies are not there yet is an install that fails.
+          npm publish . --provenance --access public
+
   tag-and-release:
     name: tag and GitHub release
-    needs: [decide, publish, publish-wheels]
+    needs: [decide, publish, publish-wheels, publish-npm]
     # The tag marks the crates.io release, so it waits for the wheels but
     # is not held hostage by a wheel wave that was skipped or failed on a
     # platform runner — the Rust release is complete either way.

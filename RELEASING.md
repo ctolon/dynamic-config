@@ -1,6 +1,6 @@
 # Releasing
 
-Seventeen crates. Fourteen publish to crates.io in four waves, versioned
+Eighteen crates. Fourteen publish to crates.io in four waves, versioned
 together; the Python wheels follow in a fifth, on a version of their
 own.
 

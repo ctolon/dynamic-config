@@ -38,6 +38,20 @@ diagnostic surface, through Node-API.
 - Hand-written TypeScript definitions, so `current()` is `T` under
   `strict: true` with nothing cast.
 
+- **Twelve examples**, seven of them run in CI on every Node version this
+  package claims and two typechecked there: a quick start, layering,
+  watching, diagnostics, Express, Fastify, Zod/Ajv/no-schema side by side,
+  a NestJS provider, Next.js server components, and the React one that
+  draws the browser boundary rather than pretending there is none.
+- **A book of its own**, at `/dynamic-config/node/`, beside the Rust and
+  Python ones.
+- **`tests/typing/usage.ts`**, compiled under `strict`,
+  `exactOptionalPropertyTypes` and `noUncheckedIndexedAccess` — the same
+  gate the Python binding has as `mypy --strict`.
+- Prebuilt binaries for linux x64/arm64 (glibc), macOS x64/arm64 and
+  Windows x64, published as optional dependencies with npm provenance, so
+  an install downloads one binary and compiles nothing.
+
 ### Notes
 
 - **There is no `initSync`.** Validation happens inside the load, so the

@@ -41,6 +41,22 @@ bumps the patch. A change to the minimum supported Rust version is breaking.
   reload. It is also why there is no `initSync`: a synchronous load would
   be the loop waiting for itself.
 
+  Twelve examples, a book of its own at `/dynamic-config/node/`, a
+  `tsc --strict` gate over the definitions a caller sees, and a CI matrix
+  across Node 18, 20, 22 and 24 — Node-API is ABI-stable, but the
+  JavaScript half is ordinary code that a version can break. The release
+  workflow gained an npm wave: five native runners, one prebuilt binary
+  each, published as optional dependencies with provenance.
+- **`@dynamic-config/remote`**: the eight Rust stores for Node — etcd,
+  Consul, Vault, NATS, Redis, S3, Firestore and git — as a second package,
+  for the reason they are a second wheel in Python. Each is a class with
+  an async `fetch()` and a `describe()`, which is the shape the base
+  package's `setRemote` already took, so the two meet through a documented
+  surface rather than through each other's internals. `useStore` is the
+  bridge: a round trip must not sit on the event loop, and the remote
+  layer is filled from a worker thread and must be handed a synchronous
+  answer.
+
 ### Fixed
 
 - **Four counts in the prose that the workspace had outgrown**, and a test

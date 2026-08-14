@@ -348,12 +348,16 @@ fn the_prose_counts_match_the_workspace() {
         // the family is defined by what it uses rather than by a list here,
         // which would need updating for exactly the reason this test exists.
         //
-        // Two crates use it without being one, and both are named rather
-        // than pattern-matched away: the server *serves* what a store
-        // fetched, and the Python remote wheel *packages* the family.
+        // Three crates use it without being one, and all three are named
+        // rather than pattern-matched away: the server *serves* what a
+        // store fetched, and the two binding packages *package* the
+        // family.
         let consumer = matches!(
             name.as_str(),
-            "dynamic-config-store-core" | "dynamic-config-server" | "dynamic-config-python-remote"
+            "dynamic-config-store-core"
+                | "dynamic-config-server"
+                | "dynamic-config-python-remote"
+                | "dynamic-config-node-remote"
         );
 
         if text.contains("dynamic-config-store-core") && !consumer {

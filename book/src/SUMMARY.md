@@ -39,6 +39,7 @@
 - [The Config Server](config-server.md)
   - [Threat Model](config-server/threat-model.md)
 - [Python Bindings](python.md)
+- [Node.js Bindings](node.md)
 - [Examples](examples.md)
 
 # Reference

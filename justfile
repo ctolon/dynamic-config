@@ -198,10 +198,35 @@ node:
     cargo build -p dynamic-config-node
     cp target/debug/libdynamic_config_node.so dynamic-config-node/index.node
     cd dynamic-config-node && node --test "tests/*.test.js"
-    cd dynamic-config-node && node examples/01-quick-start.mjs > /dev/null
-    # 02 and 03 need express and zod; they say so and exit cleanly without.
-    cd dynamic-config-node && node examples/02-express.mjs > /dev/null
-    cd dynamic-config-node && node examples/03-zod.mjs > /dev/null
+    # The types a caller sees, checked the way their CI checks them —
+    # skipped with a word rather than failing when TypeScript is not
+    # installed, because `npm install -D typescript` is a choice this
+    # recipe should not make for a contributor who is fixing Rust.
+    cd dynamic-config-node && if [ -x node_modules/.bin/tsc ]; then \
+        node_modules/.bin/tsc -p tests/typing/tsconfig.json && \
+        node_modules/.bin/tsc -p examples/tsconfig.json; \
+      else \
+        echo "skipping the type check: npm install -D typescript"; \
+      fi
+    # Every runnable example. Three want a framework and say so rather
+    # than failing when it is absent, so this needs no `npm install` —
+    # what it proves without one is that they still start and exit.
+    cd dynamic-config-node && for example in examples/*.mjs; do \
+        echo "→ $example"; node "$example" > /dev/null || exit 1; \
+      done
+
+# The eight stores for Node, as a second package. Needs Node 18 or newer
+# and nothing else: the suite constructs every store, checks that no
+# description carries a credential, and drives the failure a store that is
+# not there produces. A document actually arriving is the store crates'
+# container suites, which already run against real servers.
+node-remote:
+    cargo build -p dynamic-config-node-remote
+    cp target/debug/libdynamic_config_node_remote.so dynamic-config-node-remote/index.node
+    # The base package, linked the way npm would install it.
+    mkdir -p dynamic-config-node-remote/node_modules
+    ln -sfn ../../dynamic-config-node dynamic-config-node-remote/node_modules/dynamic-config
+    cd dynamic-config-node-remote && node --test "tests/*.test.js"
 
 # Chaos: a store unplugged mid-watch, and put back.
 #
@@ -304,6 +329,7 @@ book:
     # The binding's own book, into the first one's output — the layout CI
     # publishes: `/dynamic-config/` and `/dynamic-config/python/`.
     mdbook build book-python --dest-dir book/book/python
+    mdbook build book-node --dest-dir book/book/node
 
 # Regenerate the compile-fail expectations after an intentional change.
 bless:

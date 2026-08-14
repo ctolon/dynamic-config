@@ -13,8 +13,8 @@ the eleven companions' alike. The pre-release hook rewrites them all
 behind anyway. The book never carries the number at all —
 its snippets say `<version>`.
 
-Seventeen crates in one workspace, one version, published together —
-fourteen to crates.io, two to PyPI, one to npm:
+Eighteen crates in one workspace, one version, published together —
+fourteen to crates.io, two to PyPI, two to npm:
 
 ```text
 dynamic-config-macros      the proc macro; no stable API of its own
@@ -243,6 +243,7 @@ it.
 |---|---|
 | what the crate does, and why each decision was made | `book/src/` — the book is the specification; `README.md` is the storefront |
 | the same, for the Python binding | `book-python/src/` — its own book since 0.6.1, published at `/dynamic-config/python/`. The Rust book keeps one stub page that links to it |
+| the same, for the Node binding | `book-node/src/`, published at `/dynamic-config/node/`; the crate is `dynamic-config-node`, the facade is `dynamic-config-node/js/`, and the npm package is `dynamic-config` |
 | what is deliberately absent, and what would reopen it | `book/src/limitations.md` |
 | what might still be built | `ROADMAP.md` |
 | how a contributor gets started, and what every module does | `docs/CONTRIBUTOR-ONBOARDING.md` |
@@ -251,6 +252,7 @@ it.
 | what the attribute expands to | `dynamic-config-macros/src/expand/` |
 | storage and reload hooks | `dynamic-config/src/cell.rs` |
 | the Python bindings, inside | `book-python/src/internals.md`, then `dynamic-config-python/src/` |
+| the Node bindings, inside | `book-node/src/internals.md` — the thread rule is the whole design — then `dynamic-config-node/src/` |
 | what Python deliberately does not do | `book-python/src/limitations.md` |
 
 ## Style

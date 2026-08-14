@@ -2,7 +2,15 @@
   "name": "dynamic-config",
   "version": "0.0.1",
   "description": "Hot-reloadable configuration for Node.js: Rust resolves, your schema validates",
-  "keywords": ["config", "configuration", "hot-reload", "settings", "watch", "zod", "napi-rs"],
+  "keywords": [
+    "config",
+    "configuration",
+    "hot-reload",
+    "settings",
+    "watch",
+    "zod",
+    "napi-rs"
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -15,7 +23,11 @@
   },
   "main": "js/index.js",
   "types": "js/index.d.ts",
-  "files": ["js/", "index.node", "README.md", "LICENSE"],
+  "files": [
+    "js/",
+    "README.md",
+    "LICENSE"
+  ],
   "napi": {
     "binaryName": "dynamic-config",
     "targets": [
@@ -27,11 +39,11 @@
     ]
   },
   "scripts": {
-    "build": "napi build --platform --release --cargo-cwd .. --cargo-name dynamic-config-node",
-    "build:debug": "napi build --platform --cargo-cwd .. --cargo-name dynamic-config-node",
-    "test": "node --test tests/"
+    "test": "node --test \"tests/*.test.js\"",
+    "typecheck": "tsc -p tests/typing/tsconfig.json && tsc -p examples/tsconfig.json",
+    "build": "cargo build -p dynamic-config-node --release && cp ../target/release/libdynamic_config_node.so index.node"
   },
   "devDependencies": {
-    "@napi-rs/cli": "^3.0.0"
+    "typescript": "^5.6.0"
   }
 }

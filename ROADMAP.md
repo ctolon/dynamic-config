@@ -62,8 +62,8 @@ construction — a patch, so nothing in it may change a public signature.
 What it carries: the failure-branch *audit* behind the wiring above, with
 chaos tests that unplug each store; a documentation and manifest sweep; a
 Python book of its own; msgspec as a fifth Python schema; Node.js
-bindings at 0.0.1; and a third-party dependency audit across all three
-ecosystems.
+bindings at 0.0.1, with a book of their own; and a third-party dependency
+audit across all three ecosystems.
 
 Two 0.6 answers are worth keeping in view because they will be asked again:
 
@@ -176,7 +176,7 @@ and an eighth done casually would be worse than none.
 
 ### One book, or a book per crate **[own]**
 
-Seventeen crates share one mdBook, and the chapters that are *about a crate*
+Eighteen crates share one mdBook, and the chapters that are *about a crate*
 rather than about the engine are already the majority of it: eight store
 pages, the config server and its threat model, the CLI, ten Python pages.
 They are correct and they are in the wrong place — a reader who has added
@@ -217,8 +217,9 @@ chapters into `book-python/`, published into the Rust book's own output as
 that linked to them moved, and `/dynamic-config/python.html` is a stub that
 links onward. The cost is what was predicted: the inward links became
 absolute URLs, and the link checker takes both books' sources so they are
-verified like any other external link. The Node binding gets a third book
-of the same shape.
+verified like any other external link. The Node binding got the third book of the same
+shape, at `/dynamic-config/node/`, which is the decision applied twice
+rather than argued twice.
 
 ---
 

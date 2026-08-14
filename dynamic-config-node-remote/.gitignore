@@ -1,0 +1,5 @@
+# The built addon: one per platform, produced by `napi build` and published
+# to npm as an optional dependency. Never committed — a binary in a git
+# history is a binary somebody has to trust.
+index.node
+node_modules/

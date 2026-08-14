@@ -142,6 +142,10 @@ export class DynamicConfig<T = unknown> {
 
   // Sources, in call order.
   file(path: string): this;
+  /**
+   * Look for `name` in each of `paths`. **Every** directory with a match
+   * contributes a file, layered in search order — the last one wins.
+   */
   discover(name: string, paths: string[]): this;
   env(prefix: string): this;
   nest(separator: string): this;
@@ -157,6 +161,7 @@ export class DynamicConfig<T = unknown> {
   setOverride(path: string, value: unknown): this;
   clearDefaults(): this;
   clearOverrides(): this;
+  /** `--set` pairs. The key is the path inside this section: `port=1`. */
   setAssignments(assignments: string[]): this;
   clearAssignments(): this;
   bindEnv(path: string, variable: string): this;

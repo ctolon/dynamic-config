@@ -2324,6 +2324,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "dynamic-config-node-remote"
+version = "0.0.1"
+dependencies = [
+ "dynamic-config",
+ "dynamic-config-consul",
+ "dynamic-config-etcd",
+ "dynamic-config-firestore",
+ "dynamic-config-git",
+ "dynamic-config-nats",
+ "dynamic-config-redis",
+ "dynamic-config-s3",
+ "dynamic-config-store-core",
+ "dynamic-config-vault",
+ "napi",
+ "napi-build",
+ "napi-derive",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "dynamic-config-python"
 version = "0.1.1"
 dependencies = [

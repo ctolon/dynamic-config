@@ -1,0 +1,26 @@
+{
+  "name": "@dynamic-config/remote",
+  "version": "0.0.1",
+  "description": "The eight Rust remote stores for dynamic-config's Node bindings",
+  "keywords": ["config", "configuration", "etcd", "consul", "vault", "nats", "redis", "s3", "firestore", "git"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ctolon/dynamic-config.git",
+    "directory": "dynamic-config-node-remote"
+  },
+  "homepage": "https://ctolon.github.io/dynamic-config/node/remote-stores.html",
+  "engines": {
+    "node": ">= 18"
+  },
+  "main": "js/index.js",
+  "types": "js/index.d.ts",
+  "files": ["js/", "README.md", "LICENSE"],
+  "peerDependencies": {
+    "dynamic-config": "^0.0.1"
+  },
+  "scripts": {
+    "test": "node --test \"tests/*.test.js\"",
+    "build": "cargo build -p dynamic-config-node-remote --release && cp ../target/release/libdynamic_config_node_remote.so index.node"
+  }
+}

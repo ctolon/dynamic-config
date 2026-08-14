@@ -17,7 +17,40 @@
 const { createRequire } = require("node:module");
 
 const load = createRequire(__filename);
-const native = load("../index.node");
+
+/**
+ * The addon: the platform package npm installed, or a local build.
+ *
+ * A published install has exactly one of the five per-platform packages —
+ * npm skips the rest by `os`/`cpu` — and a checkout of this repository has
+ * `index.node` beside this file instead, from `just node`. Both are tried,
+ * in that order, and a failure names both places rather than leaving
+ * somebody with `MODULE_NOT_FOUND` and a path they have never seen.
+ */
+function addon() {
+  const platform = `dynamic-config-${process.platform}-${process.arch}${
+    process.platform === "linux" ? "-glibc" : ""
+  }`;
+
+  for (const candidate of [platform, "../index.node"]) {
+    try {
+      return load(candidate);
+    } catch (failure) {
+      if (failure.code !== "MODULE_NOT_FOUND") {
+        throw failure;
+      }
+    }
+  }
+
+  throw new Error(
+    `dynamic-config has no binary for ${process.platform} ${process.arch}. ` +
+      `Neither the platform package (${platform}) nor a local build ` +
+      "(index.node, from `just node`) is here. The published platforms are " +
+      "linux x64/arm64 (glibc), darwin x64/arm64 and win32 x64.",
+  );
+}
+
+const native = addon();
 
 /**
  * What every failure is: the engine's message, plus the three things a
@@ -134,7 +167,14 @@ class DynamicConfig {
     return this;
   }
 
-  /** Look for `name` in each of `paths`, in order. */
+  /**
+   * Look for `name.{toml,json,yaml}` in each of `paths`.
+   *
+   * **Every** directory with a match contributes a file, layered in search
+   * order — so `/etc` defaults, `~/.config` overrides and a local file
+   * wins. Stopping at the first hit would make naming two directories
+   * pointless.
+   */
   discover(name, paths) {
     unwrap(this.#native.discover(name, paths));
 
@@ -231,7 +271,12 @@ class DynamicConfig {
     return this;
   }
 
-  /** `--set key=value` pairs, as a command line hands them over. */
+  /**
+   * `--set key=value` pairs, as a command line hands them over.
+   *
+   * The key is the path *inside this configuration's section* — `port=1`,
+   * not `db.port=1` — the same path `setDefault` and `explain` take.
+   */
   setAssignments(assignments) {
     unwrap(this.#native.setAssignments(assignments));
 

@@ -80,6 +80,36 @@ nightly and release gate rather than a per-commit one. What they pin is the
 pair an alert reads: `remote_up` goes to zero *while the staleness clock
 keeps running*, and the last good document is still being served.
 
+## The Node.js bindings
+
+```sh
+just node           # build the addon, run the suite, run every example
+```
+
+Node 18 or newer, and nothing else: the suite is `node --test` and the
+facade is JavaScript with a hand-written `.d.ts`, so there is no build
+step and no `npm install` in the loop. Three examples want a framework —
+they say so and exit cleanly without one.
+
+The type check is the exception, and it is skipped with a word rather than
+failing when TypeScript is absent:
+
+```sh
+cd dynamic-config-node && npm install -D typescript && npm run typecheck
+```
+
+It is not optional in CI. A regression in the `.d.ts` is invisible to a
+test suite — `config.current().host` runs perfectly well while the checker
+calls it `unknown` — which is why `tests/typing/usage.ts` exists and is
+compiled under `strict`, `exactOptionalPropertyTypes` and
+`noUncheckedIndexedAccess`.
+
+**What to know before changing the compiled half**: validation runs inside
+the load, on a worker thread, and reaches the event loop through a
+`ThreadsafeFunction`. That ordering is what makes a rejected document
+change nothing, and it is why nothing here is synchronous.
+`book-node/src/internals.md` is the whole argument.
+
 ## The Python bindings, without a GIL
 
 `just python` runs the suite on whatever interpreter the venv holds. The

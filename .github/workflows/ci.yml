@@ -410,11 +410,20 @@ jobs:
       - run: cp target/release/libdynamic_config_node.so dynamic-config-node/index.node
       - run: node --test "tests/*.test.js"
         working-directory: dynamic-config-node
-      # The examples are documentation people run, so they run here. Two of
-      # them want a framework; they say so and exit cleanly without one,
+      # The examples are documentation people run, so they run here. Three
+      # of them want a framework; they say so and exit cleanly without one,
       # which is why they are installed rather than skipped.
-      - run: npm install --no-save --no-fund --no-audit express zod
+      - run: npm install --no-save --no-fund --no-audit express fastify zod typescript
         working-directory: dynamic-config-node
+      # The types a caller sees, checked the way their CI checks them: a
+      # regression here is invisible to a test suite, because
+      # `config.current().host` runs perfectly well while the checker calls
+      # it `unknown` and the editor offers no completion.
+      - name: the types, under strict
+        working-directory: dynamic-config-node
+        run: |
+          npx tsc -p tests/typing/tsconfig.json
+          npx tsc -p examples/tsconfig.json
       - name: every example
         working-directory: dynamic-config-node
         run: |
@@ -422,6 +431,42 @@ jobs:
             echo "── $example"
             node "$example" > /dev/null
           done
+
+  node-remote:
+    name: the Node stores
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v5
+        with:
+          node-version: "22"
+      # etcd's client compiles its gRPC stubs at build time and needs
+      # `protoc`, which the runner image does not carry.
+      - run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      # One version rather than the base package's matrix: this addon has no
+      # JavaScript half worth speaking of — eight constructors and a bridge —
+      # and it is the slowest thing in this workflow to build.
+      #
+      # The recipe's steps, written out: nothing else in this workflow
+      # installs `just`, and a job that needed a task runner to run three
+      # commands would be the first.
+      - run: cargo build -p dynamic-config-node-remote --release
+      - run: cp target/release/libdynamic_config_node_remote.so dynamic-config-node-remote/index.node
+      - name: the base package, linked the way npm would install it
+        run: |
+          mkdir -p dynamic-config-node-remote/node_modules
+          ln -sfn ../../dynamic-config-node dynamic-config-node-remote/node_modules/dynamic-config
+      # The base package needs its own binary too: the stores' suite imports
+      # `DynamicConfigError` from it.
+      - run: cargo build -p dynamic-config-node --release
+      - run: cp target/release/libdynamic_config_node.so dynamic-config-node/index.node
+      - run: node --test "tests/*.test.js"
+        working-directory: dynamic-config-node-remote
 
   python-free-threaded:
     name: the Python bindings, without a GIL
@@ -811,6 +856,7 @@ jobs:
             dynamic-config-*/README.md dynamic-config-*/CHANGELOG.md
             book/src/*.md book/src/remote-stores/*.md
             book/src/config-server/*.md book-python/src/*.md
+            book-node/src/*.md dynamic-config-node/examples/*/*.md
             .claude/skills/*/SKILL.md .github/ISSUE_TEMPLATE/*.md
           fail: true
 
@@ -918,6 +964,7 @@ jobs:
       - python-free-threaded
       - python-remote
       - node
+      - node-remote
       - bench
       - coverage
       - msrv

@@ -120,4 +120,39 @@ Two numbers, because they move on two schedules: `packageVersion()` is
 this package's, and `engineVersion()` is the Rust crate it was built
 against.
 
+## The book
+
+[**dynamic-config for Node.js**](https://ctolon.github.io/dynamic-config/node/)
+— the API reference, schemas, watching, the frameworks, the remote stores,
+what crosses the boundary and what this binding will not do.
+
+The engine's own behaviour — precedence, profiles, discovery, the
+last-known-good cache, the document-shape rules — is the
+[Rust book](https://ctolon.github.io/dynamic-config/), because it is the
+same engine.
+
+## Examples
+
+Twelve, in [`examples/`](examples/): a quick start, layering, watching,
+diagnostics, Express, Fastify, Zod/Ajv/no-schema side by side, a NestJS
+provider, Next.js server components, and the React one that draws the
+browser boundary rather than pretending there is none. The runnable ones
+run in CI on every Node version this package claims; the TypeScript ones
+are typechecked there.
+
+## Supported platforms
+
+| | x64 | arm64 |
+|---|---|---|
+| Linux (glibc) | ✅ | ✅ |
+| macOS | ✅ | ✅ |
+| Windows | ✅ | — |
+
+One prebuilt binary per platform, installed as an optional dependency — so
+`npm install` downloads one, not five, and compiles nothing.
+
+**Node 18, 20, 22 and 24** are tested in CI. Node-API is ABI-stable, so
+the same binary serves versions released after this one; the matrix exists
+because the JavaScript half is ordinary code that a version can break.
+
 [`dynamic-config`]: https://crates.io/crates/dynamic-config
