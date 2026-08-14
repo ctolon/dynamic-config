@@ -26,6 +26,15 @@ when.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`documentation` pointed at another crate.** This crate carried none of
+  the workspace's shared metadata, so it inherited the engine's
+  `docs.rs/dynamic-config` link — a reader following it from crates.io
+  landed on a library rather than on this binary. It now names its own,
+  along with the categories and keywords a search for a configuration CLI
+  would actually match.
+
 ## [0.6.0] — 2026-08-13
 
 ## [0.5.0] — 2026-08-12

@@ -30,6 +30,10 @@ is the door into this one.
 
 ## [Unreleased]
 
+### Changed
+
+- The same per-interpreter classifiers the base wheel gained.
+
 ## 0.1.1 — 2026-08-14
 
 ### Added

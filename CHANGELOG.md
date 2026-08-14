@@ -25,6 +25,22 @@ bumps the patch. A change to the minimum supported Rust version is breaking.
 
 ## [Unreleased]
 
+### Changed
+
+- **Every crate's crates.io metadata says what that crate is.** The stores
+  inherited `categories = ["config", "development-tools"]` and one set of
+  five keywords from the workspace, so a search for `etcd` or `vault`
+  matched none of them and a client for a key/value store was filed under
+  development tools. Each crate now carries its own: the stores are
+  `api-bindings`, the server is `web-programming::http-server`, the macro
+  crate is `development-tools::procedural-macro-helpers`, the CLI is
+  `command-line-utilities`, and the keywords name the store rather than
+  repeating the engine's. `dynamic-config-cli` also gained the
+  `documentation` link it was inheriting from another crate.
+- **Both wheels declare the interpreters they are tested against.** PyPI
+  filters on the per-version classifiers, and `requires-python` alone does
+  not populate them.
+
 ## [0.6.0] — 2026-08-13
 
 ### Added

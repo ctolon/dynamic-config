@@ -26,6 +26,12 @@ breaking.
 
 ## [Unreleased]
 
+### Changed
+
+- One classifier per interpreter the CI matrix actually runs (3.9 through
+  3.14), plus CPython and the Python-modules topic: PyPI's filter reads
+  those rather than `requires-python`.
+
 ## 0.1.1 — 2026-08-14
 
 ### Added

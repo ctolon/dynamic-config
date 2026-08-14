@@ -18,8 +18,20 @@ classifiers = [
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
+    # One row per interpreter this wheel is *tested* against, because that is
+    # what PyPI's filter answers and what `requires-python` cannot say on its
+    # own: the abi3 wheel would install on anything from 3.9 upwards, and the
+    # CI matrix is what makes the claim true.
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Rust",
     "Topic :: Software Development :: Libraries",
+    "Topic :: Software Development :: Libraries :: Python Modules",
     "Typing :: Typed",
 ]
 # None. A `dataclasses.dataclass` is a schema here, and the engine is
