@@ -23,8 +23,11 @@ so a release that did not touch it is a no-op.
 workspace's — prepare, land, let CI publish:
 
 ```sh
-./scripts/release-python.sh --status     # versions here and on PyPI
-./scripts/release-python.sh patch        # bump + rotate the changelog + commit
+./scripts/release-python.sh --status     # versions here and on PyPI, both wheels
+./scripts/release-python.sh --check      # would a prepare work, and why not
+./scripts/release-python.sh patch        # bump both + rotate both + commit
+cargo check -p dynamic-config-python     # the lockfile follows the bump
+git add Cargo.lock && git commit --amend --no-edit
 git push origin dev && ./scripts/promote.sh
 ./scripts/release-python.sh --publish    # dispatch the wheel wave
 ```
@@ -32,25 +35,34 @@ git push origin dev && ./scripts/promote.sh
 A workspace release carries the wheels along automatically; the dispatch
 is for a Python-only one, where there are no crates to wait for.
 
-**Two distributions, one rotation.** `dynamic-config-python-remote` is a
-second wheel — `dynamic-config-py[remote]` resolves to it — and
-`release-python.sh` knows about one changelog:
+**Two distributions, one version.** `dynamic-config-python-remote` is a
+second wheel — `dynamic-config-py[remote]` resolves to it — and it moves
+with the first, always. That was an open question through 0.6 and it is
+settled: they are built from one commit by one job, the extra resolves to
+a *pair*, CI asserts the two manifests agree, and the remote wheel imports
+`Format` and `RemoteSource` from the base one, so a gap between them is a
+combination nobody has tested. The cost is stated rather than hidden: a
+fix to the etcd binding bumps the base wheel too, and its changelog will
+carry a version whose entry says nothing changed there.
 
-```sh
-changelog="dynamic-config-python/CHANGELOG.md"
-```
+`release-python.sh` moves all five files in one commit — both manifests,
+both changelogs, and the `dynamic-config-py>=…` floor in the remote
+wheel's `pyproject.toml`, which lags into a broken pair if it is left
+behind.
 
-So `dynamic-config-python-remote/CHANGELOG.md` is rotated by nobody:
-`cargo release` skips the crate (`release = false`) and the Python flow
-does not name it. **Move its `## [Unreleased]` block under the new version
-heading by hand before tagging**, the way the file's own template asks —
-otherwise a wheel ships to PyPI with a changelog saying nothing has been
-released. CI already checks that the two `Cargo.toml` versions agree, which
-is the adjacent mistake and not this one.
+**`--check` before you prepare.** It refuses a version that is already on
+PyPI, and that is not hypothetical: `dynamic-config-py` 0.1.0 shipped with
+0.5, the 0.6 wheel wave prepared 0.1.0 again, and `maturin upload
+--skip-existing` made the whole wave a silent no-op. It also checks that
+the two manifests agree, that the floor matches, and that there is
+something under `## [Unreleased]` to release.
 
-Whether the two wheels should version together at all — and therefore
-whether `release-python.sh` should take a list of changelogs — is an open
-decision, not an oversight; the check above is what holds until it is made.
+Neither Python changelog carries a compare-link footer, and that is
+deliberate: these packages have no tag of their own — the repository's
+tags are workspace versions — so a `[Unreleased]: …/compare/vX…HEAD`
+definition points at crate releases that have nothing to do with the
+wheel, and there is no bracketed version heading for it to pair with.
+The rotation writes unbracketed headings for the same reason.
 
 ```text
 dynamic-config-macros          first, always
