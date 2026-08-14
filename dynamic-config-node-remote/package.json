@@ -36,6 +36,6 @@
   },
   "scripts": {
     "test": "node --test tests/*.test.js",
-    "build": "cargo build -p dynamic-config-node-remote --release && cp ../target/release/libdynamic_config_node_remote.so index.node"
+    "build": "cargo build -p dynamic-config-node-remote --release && node -e \"const {copyFileSync, existsSync} = require('fs'); const built = ['../target/release/libdynamic_config_node_remote.so', '../target/release/libdynamic_config_node_remote.dylib', '../target/release/dynamic_config_node_remote.dll'].find(existsSync); copyFileSync(built, 'index.node')\""
   }
 }

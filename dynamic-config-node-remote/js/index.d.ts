@@ -36,8 +36,14 @@ export interface Tls {
 
 /** A running watch, and the handle that ends it. */
 export interface Watching {
-  /** Idempotent, and it waits for the loop to notice. */
-  stop(): void;
+  /**
+   * Ends the watch and resolves when its loop has stopped.
+   *
+   * Asynchronous because a watch loop is inside a network request for
+   * most of its life, and joining it from a synchronous method would park
+   * the event loop for as long as that request takes. Idempotent.
+   */
+  stop(): Promise<void>;
 }
 
 /** What every store here answers. */

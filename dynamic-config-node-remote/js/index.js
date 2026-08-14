@@ -60,9 +60,15 @@ function unwrap(outcome) {
  * ```js
  * const store = new Etcd({ endpoints: ["http://etcd:2379"], key: "myapp/db.json" })
  *
- * await useStore(config, store)     // fetch, install, and it is live
- * await refreshStore(config, store) // later, on a timer or a signal
+ * const handle = await useStore(config, store) // fetch, install, and it is live
+ *
+ * await handle.refresh()                       // later, on a timer or a signal
  * ```
+ *
+ * The refresh lives on the returned handle rather than in a second free
+ * function because it needs the same `latest` slot the install created —
+ * a bare `refreshStore(config, store)` would have nowhere to put the
+ * answer.
  */
 async function useStore(config, store) {
   const latest = { current: await fetchFrom(store) };

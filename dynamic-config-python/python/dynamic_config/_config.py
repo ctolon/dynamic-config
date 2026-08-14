@@ -644,7 +644,12 @@ class DynamicConfig(Generic[M]):
         return self._cached
 
     def replace(self, model: M) -> None:
-        """Installs a model built by the caller, firing the hooks."""
+        """Installs a model built by the caller, firing the hooks.
+
+        The engine is not told: `status()` and `snapshot().generation` go
+        on describing the last real *load*, because this install never
+        went through one. `current()` is the model handed over.
+        """
         if not self._schema.is_instance(model):
             raise TypeError(
                 f"expected a {self._model.__name__}, not {type(model).__name__}"

@@ -59,7 +59,10 @@ breaking.
   are documented rather than left to be discovered: a secret is declared
   with `Meta(extra={"secret": True})`, unknown keys are the struct's
   business (`forbid_unknown_fields`), and `InvalidError.errors` is empty
-  because msgspec raises a message rather than a report. Decoding is lax,
+  because msgspec raises a message rather than a report. A secret under a
+  *container* — `list[Credentials]` — redacts the containing field whole,
+  because a dotted path cannot index a list, and the direction to be wrong
+  in is the one that keeps passwords out of a cache. Decoding is lax,
   because an environment variable is a string. `examples/22_msgspec.py`.
 - `changed_paths` and `set_default` accept a `msgspec.Struct` instance,
   under the names a file writes rather than the Python ones — a struct

@@ -58,3 +58,26 @@ thread, and a promise cannot be awaited there. Every schema library's
 synchronous door — Zod's `parse`, Ajv's compiled validator — is what this
 takes. If a check genuinely needs I/O, it is not validation: do it after
 `init()` and refuse to start.
+
+**A class instance, or anything else JSON cannot carry.** What a validator
+returns crosses back into Rust to be stored, so it is serialised: the
+document `current()` hands back is a plain object with the same *data* and
+none of the identity. A class loses its prototype — `instanceof` is
+`false`, methods and getters are gone. A `Date` is worse than a string: it
+serialises to `{}`, because it has no fields.
+
+```ts
+class Database { constructor(host) { this.host = host } get shouty() { … } }
+
+validate: (document) => new Database(document.host)
+
+config.current() instanceof Database   // false
+config.current().shouty                // undefined
+```
+
+Return plain data — objects, arrays, strings, numbers, booleans, `null` —
+and keep the behaviour outside the configuration, where a reload does not
+have to rebuild it. Zod is fine as long as the schema is: `z.date()` and
+`z.map()` produce values with the same problem, and `z.coerce.string()` or
+an ISO string in the document is the shape that survives. A wrapper the
+program wants is one line at the read: `new Database(config.current())`.

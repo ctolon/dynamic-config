@@ -160,10 +160,11 @@ test("the four push stores can be watched, and stopping is idempotent", async ()
 
   await sleep(300);
 
-  for (const handle of handles) {
-    handle.stop();
-    handle.stop(); // idempotent, and the second one must not hang
-  }
+  // Asynchronous: joining a thread that is inside a network request would
+  // park the event loop, so `stop()` resolves when the loop has actually
+  // stopped rather than blocking until then.
+  await Promise.all(handles.map((handle) => handle.stop()));
+  await Promise.all(handles.map((handle) => handle.stop())); // idempotent
 
   // Every one of them reported *something*: a connection refused, a
   // subscription that would not open, a stream that never established.
@@ -198,6 +199,37 @@ test("a credential function is called before each fetch", async () => {
   await store.fetch();
 
   assert.equal(minted, 2, "the function is called per fetch, not per store");
+});
+
+test("half a client certificate is refused rather than ignored", () => {
+  // A deployment that meant mTLS and typed one field name would otherwise
+  // connect with no identity and be told its *permissions* are wrong.
+  assert.throws(
+    () =>
+      new stores.Consul("https://127.0.0.1:9", "k", null, null, null, null, null, {
+        clientCertificateFile: "/etc/ssl/app.crt",
+      }),
+    /both halves/,
+  );
+
+  assert.throws(
+    () =>
+      new stores.Vault("https://127.0.0.1:9", "secret", "p", null, null, null, null, {
+        clientKeyPem: "-----BEGIN PRIVATE KEY-----",
+      }),
+    /both halves/,
+  );
+});
+
+test("one-sided etcd credentials are refused", () => {
+  assert.throws(
+    () => new stores.Etcd(["http://127.0.0.1:9"], "k", null, null, null, "app"),
+    /both `username` and `password`/,
+  );
+  assert.throws(
+    () => new stores.Etcd(["http://127.0.0.1:9"], "k", null, null, null, null, "hunter2"),
+    /both `username` and `password`/,
+  );
 });
 
 test("TLS material is accepted as files and as bytes", () => {

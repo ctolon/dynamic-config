@@ -116,7 +116,7 @@ engine reads it on the load path and a load must not re-enter Python.
 | `reload()` | `reload_async()` | Loads, validates, installs again, rewrites the cache |
 | `current()` | — | The installed model. One attribute lookup; raises `NotInitialisedError` before the first load |
 | `try_current()` | — | The same, or `None` |
-| `replace(model)` | — | Installs a model you built, firing the hooks |
+| `replace(model)` | — | Installs a model you built, firing the hooks. `status()` and `snapshot()` still describe the last real load |
 | `changed(timeout=None)` | `changed_async(timeout=None)` | Blocks until the next install; `None` on timeout |
 | — | `changes()` | An async iterator over every install from here on |
 | `watch(debounce=0.25, poll_interval=None)` | `watch_async(…)` | Starts a watcher; returns a [`Watch`](#watch) |

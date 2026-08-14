@@ -88,8 +88,14 @@ jobs:
           # delegates to the conversion `serde_json` already has.
           # Comment lines are the two that *explain* the exemption; what
           # is being looked for is code.
-          stray_node=$(grep -rn 'unsafe' dynamic-config-node/src/ \
+          # Both addons: the stores one has its own hand-written
+          # `ToNapiValue`, and a gate that scanned only the first would
+          # have let anything into the second.
+          stray_node=$(grep -rn 'unsafe' \
+              dynamic-config-node/src/ dynamic-config-node-remote/src/ \
             | grep -v 'outcome.rs' \
+            | grep -v 'node-remote/src/lib.rs:[0-9]*: *unsafe fn to_napi_value' \
+            | grep -v 'node-remote/src/lib.rs:[0-9]*: *unsafe { Value::to_napi_value' \
             | grep -v ':[0-9]*://' \
             | grep -v 'unsafe_op_in_unsafe_fn' || true)
           if [ -n "$stray_node" ]; then

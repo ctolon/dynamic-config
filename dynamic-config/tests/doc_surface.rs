@@ -384,21 +384,36 @@ fn the_prose_counts_match_the_workspace() {
         }
     }
 
-    // Only the words the prose actually uses; a count that grows past this
-    // table fails loudly on the lookup rather than passing silently.
+    // One table, asked both questions: *what could a page be saying* — it
+    // is the candidate list below — and *what does the workspace say*. Two
+    // lists would drift, and did: the candidates used to stop at seventeen
+    // while the workspace had eighteen members, so the two loudest claims
+    // in the repo were the two this test could not see.
+    const WORDS: [(usize, &str); 17] = [
+        (4, "four"),
+        (5, "five"),
+        (6, "six"),
+        (7, "seven"),
+        (8, "eight"),
+        (9, "nine"),
+        (10, "ten"),
+        (11, "eleven"),
+        (12, "twelve"),
+        (13, "thirteen"),
+        (14, "fourteen"),
+        (15, "fifteen"),
+        (16, "sixteen"),
+        (17, "seventeen"),
+        (18, "eighteen"),
+        (19, "nineteen"),
+        (20, "twenty"),
+    ];
+
     let word = |number: usize| -> &'static str {
-        match number {
-            6 => "six",
-            7 => "seven",
-            8 => "eight",
-            9 => "nine",
-            13 => "thirteen",
-            14 => "fourteen",
-            15 => "fifteen",
-            16 => "sixteen",
-            17 => "seventeen",
-            other => panic!("no word for {other}; add it, and check the prose"),
-        }
+        WORDS
+            .iter()
+            .find_map(|(value, spelled)| (*value == number).then_some(*spelled))
+            .unwrap_or_else(|| panic!("no word for {number}; add it to WORDS, and check the prose"))
     };
 
     // Each phrase, and the number it is a claim about. A phrase that appears
@@ -407,13 +422,23 @@ fn the_prose_counts_match_the_workspace() {
     let claims: [(&str, usize); 8] = [
         ("crates in one workspace", members),
         ("crates share", members),
-        ("crates. {} publish", members),
+        // The first half of "Eighteen crates. Fourteen publish to
+        // crates.io": two numbers in one sentence, matched by one row each.
+        ("crates.", members),
         ("crates on crates.io", published),
         ("to crates.io", published),
         ("publish to crates.io", published),
         ("store crates", stores),
         ("stores ship", stores),
     ];
+
+    // The workspace's own numbers, spelled, before a single page is read.
+    // This is what makes WORDS a gate rather than a lookup: a workspace
+    // that grows past the table stops here, saying so, instead of quietly
+    // checking prose against a number it has no word for.
+    for (_, count) in claims {
+        let _ = word(count);
+    }
 
     // The five top-level documents, and every page of all three books —
     // which is where "the seven store crates" survived two releases after
@@ -446,13 +471,8 @@ fn the_prose_counts_match_the_workspace() {
             let lowered = line.to_lowercase();
 
             for (phrase, count) in claims {
-                // `{}` in a phrase stands for the *other* number in the same
-                // sentence — "Sixteen crates. Fourteen publish" — which is
-                // matched by its own row rather than here.
-                let phrase = phrase.replace("{} ", "");
-
-                for candidate in [6, 7, 8, 9, 13, 14, 15, 16, 17] {
-                    let claim = format!("{} {phrase}", word(candidate));
+                for (candidate, spelled) in WORDS {
+                    let claim = format!("{spelled} {phrase}");
 
                     if lowered.contains(&claim) && candidate != count {
                         wrong.push(format!(

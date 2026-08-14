@@ -72,7 +72,8 @@ struct Staged {
 struct Inner {
     key: String,
     door: Door,
-    staged: Mutex<Option<Staged>>,
+    /// Validations waiting to be claimed, oldest first.
+    staged: Mutex<Vec<Staged>>,
     next_sequence: AtomicU64,
     last_committed: AtomicU64,
     engine: Mutex<Engine>,
@@ -99,22 +100,75 @@ struct Inner {
     watching: Mutex<Option<dynamic_config::watch::WatchHandle>>,
 }
 
+thread_local! {
+    /// Where a *candidate* load's validated document goes.
+    ///
+    /// `load()` installs nothing, so its validation must not reach the
+    /// staging area an install claims from — two loads resolving the same
+    /// file produce equal trees, and an install would happily claim the
+    /// candidate's entry and publish twice. A thread-local is exact
+    /// because a load runs start to finish on one worker thread, and it
+    /// costs the shared path nothing.
+    static CANDIDATE: std::cell::RefCell<Option<Value>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Whether this thread is inside `load()` rather than an install.
+fn validating_a_candidate() -> bool {
+    CANDIDATE.with(|slot| slot.borrow().is_some())
+}
+
 impl Inner {
     /// Validates `tree` and stages what came back. The engine's hook.
+    ///
+    /// Staged entries are **kept by sequence**, not overwritten. The
+    /// engine permits overlapping loads — a `load()` that installs
+    /// nothing can validate between a `reload()`'s validation and its
+    /// commit — and a single slot let the second one publish the first
+    /// one's document, or neither. Each load then claims the entry whose
+    /// tree is the one it resolved.
     fn validate(this: &Arc<Self>, tree: &Value) -> Result<(), Error> {
         let model = this.door.validate(tree)?;
+
+        if validating_a_candidate() {
+            CANDIDATE.with(|slot| *slot.borrow_mut() = Some(model));
+
+            return Ok(());
+        }
+
         let sequence = this.next_sequence.fetch_add(1, Ordering::SeqCst) + 1;
 
-        *this
+        let mut staged = this
             .staged
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(Staged {
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+        staged.push(Staged {
             sequence,
             tree: tree.clone(),
             model,
         });
 
+        // Bounded: a validation that nobody claims — a candidate load, a
+        // reload the engine then refused for another reason — would
+        // otherwise accumulate one document per load for the life of the
+        // process. Four is two overlapping loads' worth.
+        while staged.len() > 4 {
+            staged.remove(0);
+        }
+
         Ok(())
+    }
+
+    /// The document a load's own validation produced, taken out of the
+    /// staging area so nothing else can claim it twice.
+    fn take_staged(&self, tree: &Value) -> Option<Staged> {
+        let mut staged = self
+            .staged
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let found = staged.iter().position(|pending| pending.tree == *tree)?;
+
+        Some(staged.remove(found))
     }
 
     /// Publishes the document that belongs to `tree` — once per install.
@@ -126,33 +180,25 @@ impl Inner {
     /// round of hooks.
     fn commit(&self, tree: &Value) {
         let model = {
-            let staged = self
-                .staged
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let Some(pending) = self.take_staged(tree) else {
+                // Already claimed by the other commit path for this same
+                // install — the engine's reload hook and the explicit call
+                // after `init`/`reload` both reach here.
+                return;
+            };
 
-            match staged.as_ref() {
-                Some(pending) if pending.tree == *tree => {
-                    // Claimed rather than checked-then-claimed: the two
-                    // commit paths for one install both reach here, and a
-                    // read followed by a later store lets both of them win
-                    // — one reload, two generations, every hook twice.
-                    if self
-                        .last_committed
-                        .fetch_max(pending.sequence, Ordering::SeqCst)
-                        >= pending.sequence
-                    {
-                        return;
-                    }
-
-                    pending.model.clone()
-                }
-                // A concurrent load staged something else between this
-                // install's validation and its commit. Publishing the wrong
-                // document would be worse than publishing none: the next
-                // install will bring its own.
-                _ => return,
+            // Claimed rather than checked-then-claimed: a read followed by
+            // a later store would let both paths win — one reload, two
+            // generations, every hook twice.
+            if self
+                .last_committed
+                .fetch_max(pending.sequence, Ordering::SeqCst)
+                >= pending.sequence
+            {
+                return;
             }
+
+            pending.model
         };
 
         *self
@@ -204,6 +250,25 @@ impl Inner {
         match &*engine {
             Engine::Ready(dynamic) => Arc::clone(dynamic),
             _ => unreachable!("just built"),
+        }
+    }
+
+    /// Reads the builder, whichever half of its life it is in.
+    ///
+    /// The diagnostics are read-only, and building the engine to answer
+    /// one would close the source-declaring phase behind a caller's back:
+    /// a `check()` before the first load would make the next `file()` a
+    /// refusal. So they borrow the builder in place instead.
+    fn with_builder_ref<T>(&self, read: impl FnOnce(&Builder<Value>) -> T) -> T {
+        let engine = self
+            .engine
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+        match &*engine {
+            Engine::Building(builder) => read(builder),
+            Engine::Ready(dynamic) => read(dynamic.builder()),
+            Engine::Moving => unreachable!("held only for the instant a transition takes"),
         }
     }
 
@@ -280,33 +345,35 @@ impl Task for Load {
         let answer = match self.what {
             What::Init => dynamic.init().map(|()| Value::Null),
             What::Reload => dynamic.reload().map(|()| Value::Null),
-            What::Candidate => match dynamic.load() {
-                Ok(tree) => {
-                    // The load validated on the way through and staged what
-                    // came back; nothing installs, so nothing is published.
-                    let staged = self
-                        .inner
-                        .staged
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+            What::Candidate => {
+                // The flag the validate hook reads: what this load
+                // validates is *this* load's answer and nobody else's.
+                CANDIDATE.with(|slot| *slot.borrow_mut() = Some(Value::Null));
 
-                    match staged.as_ref() {
-                        Some(pending) if pending.tree == tree => Ok(pending.model.clone()),
-                        // Somebody else's document is in the slot. The
-                        // candidate this call resolved is still the answer.
-                        _ => Ok(tree),
-                    }
+                let answer = dynamic.load();
+                let validated = CANDIDATE.with(|slot| slot.borrow_mut().take());
+
+                match answer {
+                    // A configuration with no validator validates nothing,
+                    // and the resolved tree is the answer.
+                    Ok(tree) => Ok(match validated {
+                        Some(Value::Null) | None => tree,
+                        Some(model) => model,
+                    }),
+                    Err(error) => Err(error),
                 }
-                Err(error) => Err(error),
-            },
+            }
             What::Refresh => self.inner.layers.remote.refresh().map(|()| Value::Null),
         };
 
         match answer {
             Ok(value) => {
                 if matches!(self.what, What::Init | What::Reload) {
-                    if let Some(tree) = self.inner.staged_tree() {
-                        self.inner.commit(&tree);
+                    // Whatever this load installed: the engine has it, and
+                    // asking for it is what makes the commit *this* load's
+                    // rather than whichever validation ran last.
+                    if let Some(installed) = dynamic.current() {
+                        self.inner.commit(&installed);
                     }
                 }
 
@@ -318,18 +385,6 @@ impl Task for Load {
 
     fn resolve(&mut self, _env: Env, output: Self::Output) -> napi::Result<Self::JsValue> {
         Ok(Json(output))
-    }
-}
-
-impl Inner {
-    /// The tree the most recent validation staged, for the commit that
-    /// follows a successful install.
-    fn staged_tree(&self) -> Option<Value> {
-        self.staged
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .as_ref()
-            .map(|pending| pending.tree.clone())
     }
 }
 
@@ -349,22 +404,26 @@ impl Config {
         secrets: Option<Vec<String>>,
         fields: Option<Vec<String>>,
     ) -> napi::Result<Self> {
-        let door = Door::new(match validate {
-            Some(function) => Some(
-                function
-                    .build_threadsafe_function()
-                    // Weak, so a configuration does not keep the process
-                    // alive. A validator is called *by* work the program
-                    // asked for; holding the loop open for one would mean
-                    // a script that loads a configuration and finishes
-                    // never exits, which is the first thing anybody would
-                    // notice and the last thing they would guess.
-                    .weak::<true>()
-                    .callee_handled::<false>()
-                    .build()?,
-            ),
-            None => None,
-        });
+        let declared: Vec<String> = secrets.clone().unwrap_or_default();
+        let door = Door::new(
+            match validate {
+                Some(function) => Some(
+                    function
+                        .build_threadsafe_function()
+                        // Weak, so a configuration does not keep the process
+                        // alive. A validator is called *by* work the program
+                        // asked for; holding the loop open for one would mean
+                        // a script that loads a configuration and finishes
+                        // never exits, which is the first thing anybody would
+                        // notice and the last thing they would guess.
+                        .weak::<true>()
+                        .callee_handled::<false>()
+                        .build()?,
+                ),
+                None => None,
+            },
+            declared,
+        );
 
         let layers = Layers::leak();
         let mut builder = Builder::<Value>::new(&key);
@@ -397,7 +456,7 @@ impl Config {
         let inner = Arc::new(Inner {
             key,
             door,
-            staged: Mutex::new(None),
+            staged: Mutex::new(Vec::new()),
             next_sequence: AtomicU64::new(0),
             last_committed: AtomicU64::new(0),
             engine: Mutex::new(Engine::Moving),
@@ -410,7 +469,13 @@ impl Config {
             watching: Mutex::new(None),
         });
 
-        let validating = Arc::clone(&inner);
+        // Weak, like the reload hook twenty lines down and for the same
+        // reason: this closure is stored in the `Builder`, which the
+        // `Dynamic` owns, which `Inner.engine` holds — so a strong clone
+        // here is a cycle `Inner → engine → closure → Inner` that no drop
+        // can break. A configuration built per tenant and discarded would
+        // keep its watcher thread for the life of the process.
+        let validating = Arc::downgrade(&inner);
         let builder = builder
             .with_type_statics(
                 layers.defaults,
@@ -422,7 +487,15 @@ impl Config {
                 // An instance has no type-level slot to remember it in.
                 |_| {},
             )
-            .validate(move |tree: &Value| Inner::validate(&validating, tree));
+            .validate(move |tree: &Value| match validating.upgrade() {
+                Some(inner) => Inner::validate(&inner, tree),
+                // The configuration was dropped while a load was in
+                // flight. Refusing is the only honest answer: there is
+                // nothing left to install into.
+                None => Err(Error::invalid(
+                    "this configuration was dropped while it was loading",
+                )),
+            });
 
         *inner
             .engine
@@ -652,6 +725,15 @@ impl Config {
     /// about. It bumps the generation and fires the hooks, exactly as a
     /// load does — what it skips is the sources and the validator, because
     /// the caller is asserting they already did that.
+    ///
+    /// **What it cannot move is the engine's own metadata.** `status()`
+    /// and `snapshot().generation` come from the engine, which did not
+    /// perform this install and has no way to be told about one; they go
+    /// on describing the last real load. `generation` here — the
+    /// binding's — counts this one, and `snapshot().document` is what is
+    /// serving. That split is reported rather than papered over: a
+    /// `status()` that claimed a load had happened would be worse than
+    /// one that is a load behind.
     #[napi]
     pub fn replace(&self, document: Value) -> Value {
         *self
@@ -723,59 +805,73 @@ impl Config {
 
     #[napi(js_name = "sourceOf")]
     pub fn source_of(&self, path: String) -> Value {
-        let dynamic = Inner::dynamic(&self.inner);
+        self.inner
+            .with_builder_ref(|builder| match builder.source_of(&path) {
+                Ok(Some(origin)) => {
+                    let (kind, detail) = crate::outcome::origin_parts(&origin);
 
-        match dynamic.builder().source_of(&path) {
-            Ok(Some(origin)) => {
-                let (kind, detail) = crate::outcome::origin_parts(&origin);
-
-                outcome::ok(json!({ "kind": kind, "detail": detail }))
-            }
-            Ok(None) => outcome::ok(Value::Null),
-            Err(error) => outcome::failed(&error),
-        }
+                    outcome::ok(json!({ "kind": kind, "detail": detail }))
+                }
+                Ok(None) => outcome::ok(Value::Null),
+                Err(error) => outcome::failed(&error),
+            })
     }
 
     #[napi(js_name = "isSet")]
     pub fn is_set(&self, path: String) -> Value {
-        let dynamic = Inner::dynamic(&self.inner);
-
-        outcome::from_result(dynamic.builder().is_set(&path).map(Value::Bool))
+        self.inner.with_builder_ref(|builder| {
+            outcome::from_result(builder.is_set(&path).map(Value::Bool))
+        })
     }
 
     #[napi]
     pub fn explain(&self, path: String) -> Value {
-        let dynamic = Inner::dynamic(&self.inner);
-
-        match dynamic.builder().explain(&path) {
-            Ok(explanation) => outcome::ok(json!({ "rendered": explanation.to_string() })),
-            Err(error) => outcome::failed(&error),
-        }
+        self.inner
+            .with_builder_ref(|builder| match builder.explain(&path) {
+                Ok(explanation) => outcome::ok(json!({ "rendered": explanation.to_string() })),
+                Err(error) => outcome::failed(&error),
+            })
     }
 
     #[napi]
     pub fn check(&self) -> Value {
-        let dynamic = Inner::dynamic(&self.inner);
-
-        match dynamic.builder().check() {
-            Ok(report) => outcome::ok(json!({
-                "rendered": report.to_string(),
-                "isClean": report.is_clean(),
-                "unknown": report
-                    .unknown
-                    .iter()
-                    .map(|key| json!({ "path": key.path, "suggestion": key.suggestion }))
-                    .collect::<Vec<_>>(),
-                "unknownChecked": report.unknown_checked,
-                "failure": report.failure.as_ref().map(ToString::to_string),
-            })),
-            Err(error) => outcome::failed(&error),
-        }
+        self.inner
+            .with_builder_ref(|builder| match builder.check() {
+                Ok(report) => outcome::ok(json!({
+                    "rendered": report.to_string(),
+                    "isClean": report.is_clean(),
+                    "unknown": report
+                        .unknown
+                        .iter()
+                        .map(|key| json!({ "path": key.path, "suggestion": key.suggestion }))
+                        .collect::<Vec<_>>(),
+                    "unknownChecked": report.unknown_checked,
+                    "failure": report.failure.as_ref().map(ToString::to_string),
+                })),
+                Err(error) => outcome::failed(&error),
+            })
     }
 
     #[napi]
     pub fn status(&self) -> Value {
-        let dynamic = Inner::dynamic(&self.inner);
+        let engine = self
+            .inner
+            .engine
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+        // Nothing has loaded: say so rather than building the engine to
+        // ask, which would close the source-declaring phase.
+        let Engine::Ready(dynamic) = &*engine else {
+            return outcome::ok(json!({
+                "key": self.inner.key,
+                "generation": 0,
+                "consecutiveFailures": 0,
+                "lastReason": Value::Null,
+                "lastFailure": Value::Null,
+            }));
+        };
+
         let status = dynamic.status();
 
         outcome::ok(json!({
@@ -906,7 +1002,15 @@ impl Config {
     /// Everything the engine knows about the running document, as data.
     #[napi]
     pub fn snapshot(&self) -> Value {
-        let dynamic = Inner::dynamic(&self.inner);
+        let engine = self
+            .inner
+            .engine
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+        let Engine::Ready(dynamic) = &*engine else {
+            return outcome::ok(Value::Null);
+        };
 
         match dynamic.meta() {
             Some(meta) => outcome::ok(json!({

@@ -107,6 +107,11 @@ export interface Options<T> {
    *
    * Zod's `parse`, an Ajv validator, a function of your own. Omit it and
    * the document *is* the value — no schema, read by path.
+   *
+   * **Synchronous, and returning plain data.** It runs inside the load on
+   * a worker thread, so a promise cannot be awaited there; and its answer
+   * is serialised on the way into the store, so a class instance comes
+   * back with its prototype gone and a `Date` comes back as `{}`.
    */
   validate?: (document: unknown) => T;
   /** Dotted paths whose values must never reach a diagnostic. */
@@ -181,11 +186,25 @@ export class DynamicConfig<T = unknown> {
   current(): T;
   /** The document in force, or `undefined`, for code that would rather ask. */
   tryCurrent(): T | undefined;
-  /** One value by dotted path — the read a configuration with no schema wants. */
-  get<V = unknown>(path: string, fallback?: V): V;
+  /**
+   * One value by dotted path — the read a configuration with no schema
+   * wants.
+   *
+   * Two signatures rather than an optional argument, because they answer
+   * differently: with a fallback the result is a `V`, and without one a
+   * path nothing supplies is `undefined`, which a `strict: true` caller
+   * should be made to handle.
+   */
+  get<V = unknown>(path: string, fallback: V): V;
+  get<V = unknown>(path: string): V | undefined;
   /**
    * Installs `document` directly, without loading: the testing door, and
    * the one for configuration this library did not fetch.
+   *
+   * It bumps `generation` and fires the hooks. What it cannot move is the
+   * engine's own metadata: `status()` and `snapshot().generation` describe
+   * the last real *load*, because the engine did not perform this install
+   * and has no way to be told about one. `current()` is what was replaced.
    */
   replace(document: T): this;
   /**

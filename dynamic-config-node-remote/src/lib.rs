@@ -16,26 +16,37 @@
 //!
 //! ```js
 //! import { DynamicConfig } from "dynamic-config-node"
-//! import { Etcd } from "dynamic-config-node-remote"
+//! import { Etcd, useStore } from "dynamic-config-node-remote"
 //!
+//! const config = new DynamicConfig({ key: "db" })
 //! const store = new Etcd({ endpoints: ["http://127.0.0.1:2379"], key: "myapp/db.json" })
 //!
-//! await config.useStore(store)   // fetches, installs, and keeps it current
+//! // Fetches, installs, and hands back the handle a later refresh needs.
+//! const handle = await useStore(config, store)
+//!
+//! await handle.refresh()   // later, on a timer or a signal
 //! ```
 //!
+//! `useStore` is a free function rather than a method because the base
+//! package does not know this one exists — the two meet at `setRemote`,
+//! and nowhere else.
+//!
 //! `fetch()` is async because a network round trip must not sit on the
-//! event loop; the base package's `useStore` is what turns that into the
-//! synchronous answer its `setRemote` needs, by keeping the last one.
+//! event loop; `useStore` is what turns that into the synchronous answer
+//! `setRemote` needs, by keeping the last one.
 //!
 //! # What is here, and what is not
 //!
-//! Every store's **address, keys, format and timeout**, and the credential
-//! each one takes as a string. What is deliberately not here yet:
-//! callable credentials that rotate (the Python wheel's `auth=` callables),
-//! TLS material from bytes, and the watch loops — a watch is a long-lived
-//! thread pushing into a sink, and the base package's watcher already
-//! covers files. `refreshRemote()` on a timer is the shape for now, and it
-//! is one line.
+//! Every store's **address, keys, format and timeout**; the credential
+//! each one takes, as a string or as a function called per fetch when it
+//! rotates; TLS material as file paths or as bytes; and, for the four
+//! stores whose protocol can push, a `watch()` that calls you when the key
+//! moves.
+//!
+//! What is deliberately not here: a watch for the four stores that cannot
+//! push (S3, Git, Firestore, Vault). Polling them is a `setInterval`
+//! around `handle.refresh()`, and a loop this package hid inside a thread
+//! would be the same loop with its period out of the caller's reach.
 
 #![deny(missing_docs)]
 #![deny(unsafe_op_in_unsafe_fn)]
@@ -261,7 +272,34 @@ pub struct Tls {
 impl Tls {
     /// The store crates' own configuration, or `None` when nothing was
     /// said — which means *the platform's trust store*, not *no TLS*.
-    fn resolved(&self) -> Option<TlsConfig> {
+    ///
+    /// Half a client identity is refused rather than ignored: a
+    /// deployment that meant mTLS and typed one of the two field names
+    /// would otherwise connect with no certificate at all and be told by
+    /// the server that its *permissions* are wrong.
+    fn resolved(&self) -> Result<Option<TlsConfig>, Error> {
+        for (certificate, key, kind) in [
+            (
+                self.client_certificate_file.is_some(),
+                self.client_key_file.is_some(),
+                "clientCertificateFile/clientKeyFile",
+            ),
+            (
+                self.client_certificate_pem.is_some(),
+                self.client_key_pem.is_some(),
+                "clientCertificatePem/clientKeyPem",
+            ),
+        ] {
+            if certificate != key {
+                return Err(Error::auth(format!(
+                    "a client certificate needs both halves: `{kind}` were \
+                     given one at a time, and a store that connected \
+                     without an identity would be refused by the server as \
+                     a permissions problem instead"
+                )));
+            }
+        }
+
         let mut config = TlsConfig::new();
         let mut said = false;
 
@@ -288,7 +326,7 @@ impl Tls {
             said = true;
         }
 
-        said.then_some(config)
+        Ok(said.then_some(config))
     }
 }
 
@@ -544,23 +582,48 @@ impl Watching {
         })
     }
 
-    /// Ends the watch. Idempotent, and it waits for the loop to notice.
-    #[napi]
-    pub fn stop(&self) {
+    /// Ends the watch, and resolves when the loop has actually stopped.
+    ///
+    /// **Asynchronous, and that is the whole design.** A watch loop is
+    /// inside a network request for most of its life — Consul holds a
+    /// blocking query open for the wait it was given — so joining its
+    /// thread from a synchronous method would park the event loop for as
+    /// long as that request takes. Waiting matters, though: a stopped
+    /// watch whose thread is still in a request is a watch that can
+    /// deliver *after* `stop()` returned. So the join happens on a worker
+    /// thread and the promise is how a caller waits for it.
+    ///
+    /// Idempotent: stopping twice is one stop and a resolved promise.
+    #[napi(ts_return_type = "Promise<void>")]
+    pub fn stop(&self) -> AsyncTask<Stopping> {
         self.stop.stop();
 
-        if let Some(thread) = self
-            .thread
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .take()
-        {
-            // Joined rather than detached: a stopped watch whose thread is
-            // still inside a request is a thread that may deliver *after*
-            // `stop()` returned, which is exactly the surprise a caller
-            // calls `stop()` to avoid.
+        AsyncTask::new(Stopping(
+            self.thread
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .take(),
+        ))
+    }
+}
+
+/// Waiting for a stopped watch's thread, off the event loop.
+pub struct Stopping(Option<std::thread::JoinHandle<()>>);
+
+impl Task for Stopping {
+    type Output = ();
+    type JsValue = ();
+
+    fn compute(&mut self) -> napi::Result<Self::Output> {
+        if let Some(thread) = self.0.take() {
             let _ = thread.join();
         }
+
+        Ok(())
+    }
+
+    fn resolve(&mut self, _env: Env, (): Self::Output) -> napi::Result<Self::JsValue> {
+        Ok(())
     }
 }
 
@@ -620,7 +683,10 @@ impl Consul {
             format,
             token,
             rotating: Rotating::of(token_fn)?,
-            tls: tls.unwrap_or_default().resolved(),
+            tls: tls
+                .unwrap_or_default()
+                .resolved()
+                .map_err(|error| napi::Error::from_reason(error.to_string()))?,
             timeout: seconds(timeout_ms),
         })
     }
@@ -782,7 +848,10 @@ impl Vault {
             format,
             token,
             rotating: Rotating::of(token_fn)?,
-            tls: tls.unwrap_or_default().resolved(),
+            tls: tls
+                .unwrap_or_default()
+                .resolved()
+                .map_err(|error| napi::Error::from_reason(error.to_string()))?,
             timeout: seconds(timeout_ms),
         })
     }
@@ -894,7 +963,10 @@ impl Redis {
             url,
             shape: Some(shape),
             format,
-            tls: tls.unwrap_or_default().resolved(),
+            tls: tls
+                .unwrap_or_default()
+                .resolved()
+                .map_err(|error| napi::Error::from_reason(error.to_string()))?,
             timeout: seconds(timeout_ms),
         })
     }
@@ -1026,6 +1098,15 @@ impl Etcd {
             ),
             None => None,
         };
+
+        if username.is_some() != password.is_some() {
+            return Err(napi::Error::from_reason(
+                "etcd authentication needs both `username` and `password`; \
+                 with one of them the connection would be anonymous and \
+                 etcd would answer with a permissions error rather than an \
+                 authentication one",
+            ));
+        }
 
         Ok(Self {
             described: format!("etcd {}", endpoints.join(", ")),
@@ -1386,7 +1467,10 @@ impl Firestore {
             shape: Some(shape),
             access_token,
             rotating: Rotating::of(access_token_fn)?,
-            tls: tls.unwrap_or_default().resolved(),
+            tls: tls
+                .unwrap_or_default()
+                .resolved()
+                .map_err(|error| napi::Error::from_reason(error.to_string()))?,
             timeout: seconds(timeout_ms),
         })
     }

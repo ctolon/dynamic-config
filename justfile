@@ -3,6 +3,13 @@
 # The container-backed suites are separate: they need a Docker daemon, and a
 # contributor without one should still be able to run everything else.
 
+# What cargo names a cdylib here. Node loads the addon under one name on
+# every platform, so this is the only place the difference is spelled —
+# and a contributor on macOS gets a build rather than a `cp` that cannot
+# find a `.so`.
+lib_prefix := if os() == "windows" { "" } else { "lib" }
+lib_suffix := if os() == "macos" { ".dylib" } else if os() == "windows" { ".dll" } else { ".so" }
+
 default: check
 
 # fmt, clippy, tests, docs — the whole gate, locally. No Docker needed:
@@ -200,10 +207,10 @@ containers:
 #
 # `CARGO_TARGET_DIR` is shared with the workspace here, unlike the two
 # Python recipes: this crate's cdylib has a name of its own, so nothing
-# collides.
+# collides. The extension comes from `lib_suffix` at the top of this file.
 node:
     cargo build -p dynamic-config-node
-    cp target/debug/libdynamic_config_node.so dynamic-config-node/index.node
+    cp target/debug/{{ lib_prefix }}dynamic_config_node{{ lib_suffix }} dynamic-config-node/index.node
     cd dynamic-config-node && node --test tests/*.test.js
     # The types a caller sees, checked the way their CI checks them —
     # skipped with a word rather than failing when TypeScript is not
@@ -229,7 +236,7 @@ node:
 # container suites, which already run against real servers.
 node-remote:
     cargo build -p dynamic-config-node-remote
-    cp target/debug/libdynamic_config_node_remote.so dynamic-config-node-remote/index.node
+    cp target/debug/{{ lib_prefix }}dynamic_config_node_remote{{ lib_suffix }} dynamic-config-node-remote/index.node
     # The base package, linked the way npm would install it.
     mkdir -p dynamic-config-node-remote/node_modules
     ln -sfn ../../dynamic-config-node dynamic-config-node-remote/node_modules/dynamic-config-node

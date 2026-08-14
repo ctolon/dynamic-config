@@ -49,11 +49,54 @@ pub(crate) struct Door {
     /// `None` for a configuration with no schema: the document *is* the
     /// value, and there is nothing to call.
     validate: Option<Callable<Value, Value>>,
+    /// The paths the configuration declared secret.
+    ///
+    /// A schema library's own message names types and paths — Zod's does,
+    /// Ajv's does — but a hand-written validator's is whatever somebody
+    /// passed to `throw new Error(...)`, and
+    /// ``throw new Error(`bad token ${document.token}`)`` is the ordinary
+    /// way to write one. That message reaches `DynamicConfigError`,
+    /// `status()` and a log, so the value is taken back out of it here.
+    secrets: Vec<String>,
 }
 
 impl Door {
-    pub(crate) fn new(validate: Option<Callable<Value, Value>>) -> Self {
-        Self { validate }
+    pub(crate) fn new(validate: Option<Callable<Value, Value>>, secrets: Vec<String>) -> Self {
+        Self { validate, secrets }
+    }
+
+    /// One refusal, minus any declared secret's value.
+    ///
+    /// Compared against the document that was refused rather than against
+    /// a list of shapes: what must not travel is *this* value, and the
+    /// only thing that knows it is the tree in hand.
+    fn without_secrets(&self, message: String, tree: &Value) -> String {
+        let mut scrubbed = message;
+
+        for path in &self.secrets {
+            let mut current = tree;
+
+            for segment in path.split('.') {
+                match current.get(segment) {
+                    Some(next) => current = next,
+                    None => break,
+                }
+            }
+
+            let rendered = match current {
+                Value::String(text) => text.clone(),
+                Value::Null | Value::Object(_) | Value::Array(_) => continue,
+                other => other.to_string(),
+            };
+
+            // One character is not a secret worth mangling a message for,
+            // and it would match half the words in one.
+            if rendered.len() > 1 && scrubbed.contains(&rendered) {
+                scrubbed = scrubbed.replace(&rendered, "***");
+            }
+        }
+
+        scrubbed
     }
 
     /// One resolved document, validated by whatever the caller declared.
@@ -96,7 +139,7 @@ impl Door {
 
         match wait.recv_timeout(PATIENCE) {
             Ok(Ok(value)) => Ok(value),
-            Ok(Err(message)) => Err(Error::invalid(message)),
+            Ok(Err(message)) => Err(Error::invalid(self.without_secrets(message, tree))),
             Err(_) => Err(Error::invalid(
                 "the validator did not answer within 30 seconds; a \
                  validation is a function call, so this is an event loop \

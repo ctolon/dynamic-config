@@ -71,8 +71,15 @@ The generic parameter is what makes `current()` worth having: it is
 `Database`, not `unknown`, with nothing cast at the call site.
 
 **Whatever the validator returns is what installs.** It may coerce, fill
-defaults, freeze the object or wrap it in a class — the engine stores what
-it answered, and every later `current()` hands back that.
+defaults and rename — the engine stores what it answered, and every later
+`current()` hands back that.
+
+What it may not do is return something JSON cannot carry. The answer
+crosses back into Rust to be stored, so a class instance arrives as a
+plain object with its prototype gone and a `Date` arrives as `{}`. See
+[what a validator may not be](limitations.md#what-a-validator-may-not-be);
+the short version is to return plain data and construct whatever the
+program wants at the read.
 
 ## No schema at all
 

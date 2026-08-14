@@ -9,22 +9,13 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { mkdtempSync, writeFileSync, readFileSync, existsSync } = require("node:fs");
-const { tmpdir } = require("node:os");
+const { writeFileSync, readFileSync, existsSync } = require("node:fs");
 const { join } = require("node:path");
 const { setTimeout: sleep } = require("node:timers/promises");
 
 const { DynamicConfig, DynamicConfigError, engineVersion, packageVersion } = require("../js/index.js");
 
-/** A scratch directory, and a file in it. */
-function workspace(document, name = "config.toml") {
-  const directory = mkdtempSync(join(tmpdir(), "dynamic-config-"));
-  const path = join(directory, name);
-
-  writeFileSync(path, document);
-
-  return { directory, path, write: (text) => writeFileSync(path, text) };
-}
+const { workspace } = require("./workspace.js");
 
 /** A schema, written as the plain function this binding actually takes. */
 function database(document) {
@@ -364,6 +355,38 @@ test("strictEnv refuses an ambiguous spelling rather than guessing at it", async
   }
 });
 
+test("a validator's answer is data, and only data", async () => {
+  // The documented limitation, asserted rather than promised: what a
+  // validator returns crosses back into Rust to be stored, so it is
+  // serialised. A caller reaching for a class here should find out from
+  // this suite, not from `instanceof` in production.
+  class Database {
+    constructor(host) {
+      this.host = host;
+      this.when = new Date(0);
+    }
+
+    get shouty() {
+      return this.host.toUpperCase();
+    }
+  }
+
+  const { path } = workspace('[db]\nhost = "db.internal"\n');
+  const config = await new DynamicConfig({
+    key: "db",
+    validate: (document) => new Database(document.host),
+  })
+    .file(path)
+    .init();
+
+  const now = config.current();
+
+  assert.equal(now.host, "db.internal", "the data survives");
+  assert.equal(now instanceof Database, false, "the prototype does not");
+  assert.equal(now.shouty, undefined, "and neither does a getter");
+  assert.deepEqual(now.when, {}, "a Date has no fields, so it arrives with none");
+});
+
 test("replace installs a document without loading anything", async () => {
   const { path } = workspace('[db]\nhost = "from-file"\n');
   const seen = [];
@@ -411,4 +434,44 @@ test("changes() yields every installed document, and stops when the loop does", 
 test("both versions are reported, because they move on two schedules", () => {
   assert.match(packageVersion(), /^\d+\.\d+\.\d+$/);
   assert.match(engineVersion(), /^\d+\.\d+\.\d+$/);
+});
+
+test("a candidate load cannot strand the installed document", async () => {
+  // The race the review found: one staging slot meant a `load()` landing
+  // between a reload's validation and its commit published nobody's
+  // document — the reload resolved, the engine installed, and `current()`
+  // kept handing back the previous one.
+  const { path, write } = workspace('[db]\nhost = "first"\n');
+  const config = await new DynamicConfig({ key: "db", validate: database }).file(path).init();
+
+  for (let round = 0; round < 12; round += 1) {
+    write(`[db]\nhost = "round-${round}"\n`);
+
+    // A candidate and an install, overlapping deliberately.
+    const [, candidate] = await Promise.all([config.reload(), config.load()]);
+
+    assert.equal(config.current().host, `round-${round}`, "the install is what serves");
+    assert.equal(candidate.host, `round-${round}`, "and the candidate is the validated value");
+    assert.equal(config.generation, round + 2, "one install, one generation");
+  }
+});
+
+test("overrides restore what they found, so blocks nest", async () => {
+  const { path } = workspace('[db]\nhost = "from-file"\n');
+  const config = await new DynamicConfig({ key: "db", validate: database }).file(path).init();
+
+  config.setOverride("host", "outer");
+  await config.reload();
+
+  const inner = await config.overrides({ host: "inner" }, async () =>
+    config.overrides({ host: "innermost" }, () => config.current().host),
+  );
+
+  assert.equal(inner, "innermost");
+  assert.equal(config.current().host, "outer", "the outer pin survived both blocks");
+
+  config.clearOverrides();
+  await config.reload();
+
+  assert.equal(config.current().host, "from-file");
 });

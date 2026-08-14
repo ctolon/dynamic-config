@@ -82,12 +82,18 @@ async function main(): Promise<void> {
   // type they expect rather than being handed `any`.
   const ttl: number = config.get<number>("pool.maxSize", 8);
 
+  // Without a fallback the answer may not be there, and the checker says
+  // so — a `const missing: number = config.get<number>("nope")` is the
+  // error it should be.
+  const missing: number | undefined = config.get<number>("nope");
+
   void host;
   void maybe;
   void reloaded;
   void candidate;
   void started;
   void ttl;
+  void missing;
 
   // ── Diagnostics, each with a shape ──────────────────────────────────
   const source: Source | null = config.sourceOf("port");

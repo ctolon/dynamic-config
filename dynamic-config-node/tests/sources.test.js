@@ -10,14 +10,15 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { mkdtempSync, writeFileSync, mkdirSync } = require("node:fs");
-const { tmpdir } = require("node:os");
+const { writeFileSync, mkdirSync } = require("node:fs");
 const { join } = require("node:path");
 
 const { DynamicConfig } = require("../js/index.js");
+const { workspace: scratch } = require("./workspace.js");
 
+/** This file only wants the directory; the file it writes is its own. */
 function workspace() {
-  return mkdtempSync(join(tmpdir(), "dynamic-config-"));
+  return scratch().directory;
 }
 
 /** The whole document, whatever it is: no schema, so nothing is dropped. */

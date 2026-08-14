@@ -202,6 +202,34 @@ def test_meta_extra_declares_a_secret(workspace: Path) -> None:
     assert secret_paths(Database) == ["password", "credentials.password"]
 
 
+def test_a_secret_under_a_container_redacts_the_whole_field(workspace: Path) -> None:
+    """The case the review found, and the direction it has to be wrong in.
+
+    `users.password` names nothing the redaction can walk to — it would
+    have to index a list — so the *containing* field is redacted whole.
+    Losing the usernames from a cache costs a diagnostic; keeping the
+    passwords in one costs rather more.
+    """
+
+    class Tenants(msgspec.Struct):
+        users: list[Credentials] = msgspec.field(default_factory=list)
+        tenants: dict[str, Credentials] = msgspec.field(default_factory=dict)
+        maybe: Optional[Credentials] = None
+
+    assert secret_paths(Tenants) == ["users", "tenants", "maybe.password"]
+
+    write('[db]\n[[db.users]]\nuser = "app"\npassword = "hunter2"\n')
+
+    config = (
+        DynamicConfig(Tenants, key="db")
+        .file("config.toml")
+        .cache("cache.json", "redacted")
+    )
+    config.init()
+
+    assert "hunter2" not in Path("cache.json").read_text()
+
+
 def test_a_declared_secret_never_reaches_a_diagnostic(workspace: Path) -> None:
     write('[db]\nhost = "h"\npassword = "hunter2"\n')
 

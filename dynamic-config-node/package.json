@@ -42,7 +42,7 @@
   "scripts": {
     "test": "node --test tests/*.test.js",
     "typecheck": "tsc -p tests/typing/tsconfig.json && tsc -p examples/tsconfig.json",
-    "build": "cargo build -p dynamic-config-node --release && cp ../target/release/libdynamic_config_node.so index.node"
+    "build": "cargo build -p dynamic-config-node --release && node -e \"const {copyFileSync, existsSync} = require('fs'); const built = ['../target/release/libdynamic_config_node.so', '../target/release/libdynamic_config_node.dylib', '../target/release/dynamic_config_node.dll'].find(existsSync); copyFileSync(built, 'index.node')\""
   },
   "devDependencies": {
     "typescript": "^5.6.0"

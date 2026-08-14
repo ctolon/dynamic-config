@@ -347,7 +347,7 @@ already records itself.
 ## Credentials, and keeping them working
 
 Every store has its own way in, and every one of them expires. Three rules hold
-across all eight crates:
+across all eight store crates:
 
 **Logging in is lazy.** Building a source reaches nothing; the first read does
 it. Constructing a source is not I/O, and configuration that hits the network on

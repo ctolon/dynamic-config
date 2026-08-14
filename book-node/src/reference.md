@@ -61,7 +61,7 @@ All four take effect on the next load.
 | `current()` | the document in force. Throws before the first install |
 | `tryCurrent()` | that, or `undefined` |
 | `get(path, fallback?)` | one value by dotted path |
-| `replace(document)` | installs a document directly, without loading: the testing door |
+| `replace(document)` | installs a document directly, without loading: the testing door. `status()` and `snapshot()` still describe the last real load |
 | `changes()` | an async iterator of every installed document |
 | `generation` | how many documents have been installed |
 

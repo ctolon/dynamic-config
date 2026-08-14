@@ -123,6 +123,15 @@ class DynamicConfig {
   #native;
   #cached = undefined;
   #generation = 0;
+  /**
+   * A mirror of the override layer, in the order it was pinned.
+   *
+   * The engine owns the layer and has no way to read it back, and
+   * `overrides()` has to *restore* what it found rather than empty it —
+   * otherwise a nested block drops the outer one's pin on the way out.
+   * The Python binding keeps the same mirror for the same reason.
+   */
+  #overrides = new Map();
 
   /**
    * @param {object} options
@@ -130,7 +139,9 @@ class DynamicConfig {
    * @param {(document: unknown) => unknown} [options.validate] what turns a
    *   resolved object into the value a program reads — Zod's `parse`, an Ajv
    *   validator, a function of your own. Omitted, the document *is* the
-   *   value: no schema, read by path.
+   *   value: no schema, read by path. Synchronous, and returning plain
+   *   data: its answer is serialised into the store, so a class instance
+   *   comes back without its prototype and a `Date` comes back as `{}`.
    * @param {string[]} [options.secrets] dotted paths whose values must never
    *   reach a diagnostic. A redacting cache is refused without them.
    * @param {string[]} [options.fields] the keys the schema declares, for the
@@ -278,6 +289,7 @@ class DynamicConfig {
   /** Wins over everything, which is what makes it useful in a test. */
   setOverride(path, value) {
     unwrap(this.#native.setOverride(path, value));
+    this.#overrides.set(path, value);
 
     return this;
   }
@@ -290,6 +302,7 @@ class DynamicConfig {
 
   clearOverrides() {
     this.#native.clearOverrides();
+    this.#overrides.clear();
 
     return this;
   }
@@ -432,6 +445,12 @@ class DynamicConfig {
    * and fires the hooks exactly as a load does; what it skips is the
    * sources and the validator, because the caller is asserting they
    * already did that.
+   *
+   * It skips the engine too, which is why `status()` and
+   * `snapshot().generation` go on describing the last real load: the
+   * engine did not perform this install, and reporting one it never saw
+   * would be worse than being a load behind. `current()` and
+   * `generation` here are the replaced document's.
    */
   replace(document) {
     unwrap(this.#native.replace(document));
@@ -454,9 +473,12 @@ class DynamicConfig {
    * }
    * ```
    *
-   * Documents are queued, so a slow consumer misses nothing — and the
-   * queue is bounded at one *behind* the current document, because a
-   * configuration reader wants the latest rather than the history.
+   * A consumer that falls behind is handed the document **in force**, not
+   * the ones it missed: there is one slot, and each install overwrites it.
+   * That is the right trade for a configuration reader — resizing a pool
+   * to a size nobody is asking for any more is work done for nothing —
+   * and the wrong one for an audit log, which wants `onReload`, where
+   * every install arrives.
    */
   async *changes() {
     let pending;
@@ -642,9 +664,9 @@ class DynamicConfig {
    * drop the outer one's pin on the way out.
    */
   async overrides(values, body) {
-    const applied = Object.entries(values);
+    const before = new Map(this.#overrides);
 
-    for (const [path, value] of applied) {
+    for (const [path, value] of Object.entries(values)) {
       this.setOverride(path, value);
     }
 
@@ -654,7 +676,22 @@ class DynamicConfig {
       return await body();
     } finally {
       this.clearOverrides();
-      await this.reload();
+
+      for (const [path, value] of before) {
+        this.setOverride(path, value);
+      }
+
+      // The reload that puts things back must not decide what the caller
+      // sees: a failing assertion inside the block is the interesting
+      // failure, and a broken file discovered while cleaning up after it
+      // would replace that with itself.
+      try {
+        await this.reload();
+      } catch {
+        // Deliberately swallowed. The configuration is back where it was
+        // either way, and the next `reload()` a caller makes will report
+        // whatever is wrong with it.
+      }
     }
   }
 }

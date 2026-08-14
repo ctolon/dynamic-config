@@ -34,6 +34,15 @@ ignores a key the struct never declared, the way a Pydantic model does;
 it, the way this package's dataclass adapter always does. Neither is
 imposed here — `check()` reports unknown keys either way.
 
+**A field has exactly one name here.** The Pydantic adapter walks a
+field under every spelling a file could use, because an alias there is
+an *additional* way in: the Python name keeps working. `rename=` on a
+struct is a replacement — ``rename="camel"`` makes ``max_size``
+undecodable, and a file writing it is reporting an unknown key rather
+than setting the field. So `encode_name` alone is exact for secrets and
+for diffs, and asking for more names would be redacting paths no source
+can produce.
+
 **`InvalidError.errors` is empty.** msgspec raises a `ValidationError`
 with a message and no structured report, so there is nothing to put
 there and nothing is invented; `str(error)` names the field, as it does
@@ -45,6 +54,7 @@ situation in which msgspec is certainly installed.
 
 from __future__ import annotations
 
+import typing
 from typing import Any, Optional
 
 import msgspec
@@ -205,11 +215,53 @@ def secret_paths(
             paths.append(path)
             continue
 
-        for candidate in _unwrap(field.type):
-            if is_msgspec_struct(candidate):
-                paths.extend(secret_paths(candidate, f"{path}.", seen))
+        # A struct *directly* under this field is descended into: the
+        # redaction walks tables, so `credentials.password` is a path it
+        # can reach.
+        nested = [
+            candidate
+            for candidate in _unwrap(field.type)
+            if is_msgspec_struct(candidate)
+        ]
+
+        if not nested:
+            continue
+
+        if _under_a_container(field.type):
+            # A struct inside a *container* — `list[Credentials]`,
+            # `dict[str, Credentials]` — is a different case, and the one
+            # that used to leak: `users.password` names nothing the
+            # redaction can walk to, because it would have to index a
+            # list. So the **containing field** is redacted whole, which
+            # is what the Pydantic and dataclass adapters do and is the
+            # safe direction to be wrong in.
+            if any(secret_paths(candidate, "", seen) for candidate in nested):
+                paths.append(path)
+
+            continue
+
+        for candidate in nested:
+            paths.extend(secret_paths(candidate, f"{path}.", seen))
 
     return list(dict.fromkeys(paths))
+
+
+def _under_a_container(annotation: Any) -> bool:
+    """Whether a struct in this annotation sits inside a list, dict or tuple.
+
+    `Optional[Credentials]` is not one: `None` or a table, and a table is
+    walkable. `list[Credentials]` is, and so is `dict[str, Credentials]`.
+    """
+    origin = typing.get_origin(annotation)
+
+    if origin in (list, set, frozenset, tuple, dict):
+        return True
+
+    return any(
+        _under_a_container(argument)
+        for argument in typing.get_args(annotation)
+        if argument is not Ellipsis
+    )
 
 
 class MsgspecSchema:

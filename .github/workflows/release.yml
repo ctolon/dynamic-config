@@ -649,22 +649,78 @@ jobs:
         run: |
           node dynamic-config-node/scripts/pack-platforms.mjs
           node dynamic-config-node/scripts/pack-platforms.mjs dynamic-config-node-remote
+      # The Node packages version independently of the crates, so most
+      # workspace releases have nothing new for npm — and `npm publish`
+      # has no `--skip-existing`: publishing a version that is already
+      # there is an error, and it would take the tag job down with it.
+      # So the registry is asked first.
+      - name: is there anything to publish?
+        id: wanted
+        run: |
+          set -euo pipefail
+
+          publish=false
+
+          for package in dynamic-config-node dynamic-config-node-remote; do
+            version=$(node -p "require('./$package/package.json').version")
+            code=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+              "https://registry.npmjs.org/${package}/${version}")
+
+            case "${code}" in
+              200)
+                echo "::notice::${package}@${version} is already on npm — nothing to publish"
+                ;;
+              404)
+                echo "::notice::${package}@${version} is new"
+                publish=true
+                ;;
+              *)
+                echo "::error::the registry answered ${code} for ${package}@${version}"
+                exit 1
+                ;;
+            esac
+          done
+
+          echo "publish=${publish}" >> "$GITHUB_OUTPUT"
       - name: publish
+        if: steps.wanted.outputs.publish == 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          # The base package first, whole: the stores package declares it as
-          # a peer dependency, and a peer that is not on the registry is a
-          # warning on every install of the other.
+          set -euo pipefail
+
+          # The platform packages first: a wrapper on the registry whose
+          # optional dependencies are not there yet is an install that
+          # fails. `--provenance` records which workflow at which commit
+          # built each one.
+          #
+          # Each is skipped if it is already there, because a rerun after a
+          # partial failure is the only way forward — an npm version is as
+          # permanent as a PyPI one.
+          publish_if_new() {
+            local directory="$1"
+            local name version code
+
+            name=$(node -p "require('./${directory}/package.json').name")
+            version=$(node -p "require('./${directory}/package.json').version")
+            code=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+              "https://registry.npmjs.org/${name}/${version}")
+
+            if [ "${code}" = "200" ]; then
+              echo "── ${name}@${version} is already there"
+              return 0
+            fi
+
+            echo "── ${name}@${version}"
+            npm publish "${directory}" --provenance --access public
+          }
+
           for package in dynamic-config-node/npm/*/ dynamic-config-node-remote/npm/*/; do
-            echo "── $package"
-            npm publish "$package" --provenance --access public
+            publish_if_new "${package%/}"
           done
-          # The wrappers last: each names its per-platform packages as
-          # optional dependencies, and a wrapper on the registry whose
-          # dependencies are not there yet is an install that fails.
-          npm publish dynamic-config-node --provenance --access public
-          npm publish dynamic-config-node-remote --provenance --access public
+
+          publish_if_new dynamic-config-node
+          publish_if_new dynamic-config-node-remote
 
   tag-and-release:
     name: tag and GitHub release
