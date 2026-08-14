@@ -24,7 +24,13 @@ schemaless `Value` and somebody else's derive all work unchanged.
 three platform backends that make "edit a file and watch the snapshot
 follow" mean the same thing on Linux, macOS and Windows.
 
-**[PyO3](https://pyo3.rs)** and **[maturin](https://maturin.rs)** — the
+<!-- The repositories rather than pyo3.rs and maturin.rs: the doc sites
+     refuse connections from CI runners often enough to have taken a
+     release's link check down, and a link that fails a gate for somebody
+     else's firewall is a link that gets excluded and then rots. Both
+     repositories link to their books from the first line of the README. -->
+**[PyO3](https://github.com/PyO3/pyo3)** and
+**[maturin](https://github.com/PyO3/maturin)** — the
 Python binding and its wheels; **[napi-rs](https://napi.rs)** — the Node
 binding and its prebuilt binaries.
 

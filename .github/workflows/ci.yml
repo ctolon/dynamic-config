@@ -871,6 +871,8 @@ jobs:
           args: >-
             --no-progress
             --include-fragments
+            --max-retries 3
+            --retry-wait-time 5
             --exclude '^https://github\.com/ctolon/'
             --exclude '^https://docs\.rs/dynamic-config'
             --exclude '^https://ctolon\.github\.io/dynamic-config'
@@ -880,7 +882,7 @@ jobs:
             book/src/*.md book/src/remote-stores/*.md
             book/src/config-server/*.md book-python/src/*.md
             book-node/src/*.md dynamic-config-node/examples/*/*.md
-            .claude/skills/*/SKILL.md .github/ISSUE_TEMPLATE/*.md
+            .claude/skills/*/SKILL.md
           fail: true
 
   minimal-versions:
