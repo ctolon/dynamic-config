@@ -141,7 +141,7 @@ breaking.
   lazily, owned by the remote module and started when the first store that
   needs one is constructed; the base wheel still refuses the engine's
   `tokio` feature. See the book's
-  [Remote Stores in Rust](../book/src/python/remote-wheel.md).
+  [Remote Stores in Rust](../book-python/src/remote-wheel.md).
 
   `dynamic_config/remote.py` re-exports exactly what `dynamic_config_remote`
   exports, and that is now asserted as a **set equality in both suites**.

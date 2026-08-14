@@ -533,7 +533,7 @@ bumps the patch. A change to the minimum supported Rust version is breaking.
   No client type appears in any signature, which is the point twice over: an
   enterprise behind a private CA can now reach the four stores that had no
   door at all, and the surface is data, so the
-  [remote wheel](book/src/python/remote-stores.md) finally has something to
+  [remote wheel](book-python/src/remote-stores.md) finally has something to
   bind to.
 
   `Vault`, `Consul` and `Firestore` take it as `.with_tls(..)`; `Etcd`,
@@ -570,7 +570,7 @@ bumps the patch. A change to the minimum supported Rust version is breaking.
   way out, because a binding that ignored either would be a security bug.
   The wheel enables `dynamic-config-etcd/tls` and `dynamic-config-redis/tls`,
   without which those two would have no TLS constructor to call, and
-  `book/src/python/limitations.md` no longer lists TLS as a capability the
+  `book-python/src/limitations.md` no longer lists TLS as a capability the
   Rust crates have and the wheels do not. Custom proxies and `watch()`
   still are. A runnable example,
   `dynamic-config-python-remote/examples/09_private_ca_and_client_certificate.py`.
@@ -783,10 +783,10 @@ bumps the patch. A change to the minimum supported Rust version is breaking.
   Every blocking call has an async twin (`init_async`, `load_async`,
   `reload_async`, `changed_async`) and an executor knob to choose which
   pool pays for it, thirteen runnable examples ship with the package, and the chapter has its own sections for
-  [async](book/src/python/async.md),
-  [data types](book/src/python/types.md),
-  [web frameworks](book/src/python/frameworks.md) and
-  [limitations](book/src/python/limitations.md).
+  [async](book-python/src/async.md),
+  [data types](book-python/src/types.md),
+  [web frameworks](book-python/src/frameworks.md) and
+  [limitations](book-python/src/limitations.md).
 - `Builder::validate` accepts closures, not just function pointers: a
   validator that needs *context* — a policy object, a schema, another
   runtime's validator — could not be written as a `fn`, and that is the

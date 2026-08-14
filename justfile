@@ -18,15 +18,21 @@ fmt:
 lint:
     cargo clippy --workspace --all-targets --all-features \
         --exclude dynamic-config-python \
-        --exclude dynamic-config-python-remote -- -D warnings
+        --exclude dynamic-config-python-remote \
+        --exclude dynamic-config-node --exclude dynamic-config-node-remote -- -D warnings
     cargo clippy --workspace --all-targets --no-default-features \
         --exclude dynamic-config-python \
-        --exclude dynamic-config-python-remote -- -D warnings
-    # Their own lines, lib only: an extension module links no libpython, so
-    # it has no test target to build — and clippy over `--all-targets`
-    # would try.
+        --exclude dynamic-config-python-remote \
+        --exclude dynamic-config-node --exclude dynamic-config-node-remote -- -D warnings
+    # Their own lines, lib only: an extension module links no libpython and
+    # an addon links no Node, so neither has a test target to build — and
+    # clippy over `--all-targets` would try. The stores addon is also the
+    # one crate that needs `protoc`, which is why no workspace-wide run
+    # reaches it.
     cargo clippy -p dynamic-config-python --lib -- -D warnings
     cargo clippy -p dynamic-config-python-remote --lib -- -D warnings
+    cargo clippy -p dynamic-config-node --lib -- -D warnings
+    cargo clippy -p dynamic-config-node-remote --lib -- -D warnings
 
 # The whole suite, plus the two configurations that only exist with features
 # off. The container crates are excluded — their tests drive real servers and
@@ -38,7 +44,8 @@ test:
         --exclude dynamic-config-redis --exclude dynamic-config-s3 \
         --exclude dynamic-config-firestore --exclude dynamic-config-embedded \
         --exclude dynamic-config-python \
-        --exclude dynamic-config-python-remote
+        --exclude dynamic-config-python-remote \
+        --exclude dynamic-config-node --exclude dynamic-config-node-remote
     # The server's TLS suite needs its own line: it has no `full` feature, so
     # the workspace run above builds it with defaults and never compiles the
     # handshake, the key-permission refusal or the mTLS tests.
@@ -197,7 +204,7 @@ containers:
 node:
     cargo build -p dynamic-config-node
     cp target/debug/libdynamic_config_node.so dynamic-config-node/index.node
-    cd dynamic-config-node && node --test "tests/*.test.js"
+    cd dynamic-config-node && node --test tests/*.test.js
     # The types a caller sees, checked the way their CI checks them —
     # skipped with a word rather than failing when TypeScript is not
     # installed, because `npm install -D typescript` is a choice this
@@ -226,7 +233,7 @@ node-remote:
     # The base package, linked the way npm would install it.
     mkdir -p dynamic-config-node-remote/node_modules
     ln -sfn ../../dynamic-config-node dynamic-config-node-remote/node_modules/dynamic-config-node
-    cd dynamic-config-node-remote && node --test "tests/*.test.js"
+    cd dynamic-config-node-remote && node --test tests/*.test.js
 
 # Chaos: a store unplugged mid-watch, and put back.
 #

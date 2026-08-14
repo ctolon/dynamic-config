@@ -40,7 +40,7 @@
     ]
   },
   "scripts": {
-    "test": "node --test \"tests/*.test.js\"",
+    "test": "node --test tests/*.test.js",
     "typecheck": "tsc -p tests/typing/tsconfig.json && tsc -p examples/tsconfig.json",
     "build": "cargo build -p dynamic-config-node --release && cp ../target/release/libdynamic_config_node.so index.node"
   },

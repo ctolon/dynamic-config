@@ -35,7 +35,7 @@
     "dynamic-config-node": "^0.0.1"
   },
   "scripts": {
-    "test": "node --test \"tests/*.test.js\"",
+    "test": "node --test tests/*.test.js",
     "build": "cargo build -p dynamic-config-node-remote --release && cp ../target/release/libdynamic_config_node_remote.so index.node"
   }
 }

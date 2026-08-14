@@ -526,7 +526,9 @@ jobs:
           - target: aarch64-unknown-linux-gnu
             runner: ubuntu-24.04-arm
           - target: x86_64-apple-darwin
-            runner: macos-13
+            # The Intel runner. `macos-13` is retired and `macos-latest` is
+            # arm64, so an x86_64 addon needs this label by name.
+            runner: macos-15-intel
           - target: aarch64-apple-darwin
             runner: macos-latest
           - target: x86_64-pc-windows-msvc
@@ -600,8 +602,8 @@ jobs:
           mkdir -p dynamic-config-node-remote/node_modules
           ln -sfn ../../dynamic-config-node dynamic-config-node-remote/node_modules/dynamic-config-node
 
-          (cd dynamic-config-node && node --test "tests/*.test.js")
-          (cd dynamic-config-node-remote && node --test "tests/*.test.js")
+          (cd dynamic-config-node && node --test tests/*.test.js)
+          (cd dynamic-config-node-remote && node --test tests/*.test.js)
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: addon-${{ matrix.target }}
