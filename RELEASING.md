@@ -80,7 +80,7 @@ dynamic-config-embedded        independent — published in the first wave
 
 `dynamic-config` depends on `dynamic-config-macros` with an exact requirement
 (`=x.y.z`), so a version mismatch is impossible — and so the macro crate must
-always go first. The seven store crates depend on `dynamic-config` the same way,
+always go first. The eight store crates depend on `dynamic-config` the same way,
 which is why they come last. `dynamic-config-embedded` depends on neither, so
 CI publishes it in the first wave alongside the macros.
 

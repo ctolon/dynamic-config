@@ -170,6 +170,12 @@ def test_a_redacting_cache_is_refused_without_a_secret_list(workspace: Path) -> 
 
     assert "secret" in str(raised.value).lower(), raised.value
     assert "secrets=" in str(raised.value), "the refusal names the Python fix"
+    # Both halves of the fix, in this language: naming the secrets, or asking
+    # for the mode that redacts nothing. The message used to offer
+    # `CacheMode::Full` — a name Python does not have — and stop there.
+    assert 'cache(path, "full")' in str(raised.value), (
+        "the other way out has to be spelled the way Python spells it"
+    )
     assert not Path("last.json").exists(), "nothing was written"
 
 

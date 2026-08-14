@@ -51,8 +51,9 @@ The `no_std` crate has its own features and its own recipe:
 just embedded       # host tests + a thumbv7em build with no std at all
 ```
 
-The seven store crates' tests drive real servers in containers and need a
-working Docker daemon. They fail rather than skipping when there is none: a
+Seven of the eight store crates drive real servers in containers and need a
+working Docker daemon — git is the exception, and its tests build a repository
+in a temporary directory like any other fixture. They fail rather than skipping when there is none: a
 test that quietly stops running is one nobody notices has stopped.
 
 ```sh

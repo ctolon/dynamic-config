@@ -25,6 +25,14 @@ bumps the patch. A change to the minimum supported Rust version is breaking.
 
 ## [Unreleased]
 
+### Changed
+
+- **The cache refusal spells the second way out in Python too.** It already
+  translated `.secrets([..])` into `DynamicConfig(..., secrets=[..])` and then
+  offered `CacheMode::Full` — a name Python does not have. It now names
+  `cache(path, "full")` beside it, so both ways out of the refusal are
+  readable by whoever hit it.
+
 ## [0.6.0] — 2026-08-13
 
 ### Added

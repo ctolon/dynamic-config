@@ -25,6 +25,18 @@ bumps the patch. A change to the minimum supported Rust version is breaking.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Four counts in the prose that the workspace had outgrown**, and a test
+  that fails on the fifth: the ROADMAP said sixteen crates were on crates.io
+  when fourteen publish, two pages said seven store crates when git made it
+  eight, and `lib.rs`'s precedence chain had been missing `secrets_dir` since
+  it landed — so the crate's front page described a layer order the loader
+  did not have. `doc_surface` now counts the crates, compares the two copies
+  of the precedence chain character for character, and checks that every
+  example has a row in the book's table. The last one found `ini_provider`,
+  which had compiled and run in CI for two releases with no way to find it.
+
 ### Added
 
 - **Advisories are scanned across every ecosystem, not just Cargo.** The

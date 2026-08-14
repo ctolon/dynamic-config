@@ -78,8 +78,8 @@ runtime data, and it lives in runtime code.
   tokio, smol and Embassy all drive it. Blocking work never lands on your
   executor.
 - **Remote stores are explicit.** `refresh_remote()` does the network round
-  trip; `load()` never does. Seven store crates ship, each watching the way
-  its protocol allows.
+  trip; `load()` never does. Eight store crates ship, each watching the way
+  its protocol allows — seven over a network, and git.
 
 The full story — precedence, profiles, discovery, hot reload, encryption,
 schema export, units, the last-known-good cache, testing patterns — lives in

@@ -295,3 +295,248 @@ fn the_readmes_agree_on_one_version() {
         "the READMEs disagree on the release version: {versions:#?}"
     );
 }
+
+/// Every number this repository's prose commits to, counted from the
+/// workspace instead of remembered.
+///
+/// "Sixteen crates", "fourteen publish", "eight store crates" — each one is a
+/// claim with no compiler behind it, and each one is wrong the day a crate is
+/// added. This is that compiler. It found two: the ROADMAP said sixteen
+/// crates were on crates.io when fourteen publish, and two pages still said
+/// seven store crates when git made it eight.
+///
+/// Phrases rather than bare nouns, because "crates" alone means two different
+/// numbers a sentence apart — *sixteen crates in one workspace*, *fourteen
+/// crates on crates.io* — and a test that could not tell them apart would
+/// have to be taught to ignore one of them.
+///
+/// Only derivable counts are checked. How many chapters a book has, or how
+/// many examples run, needs a judgement call, and a test that has to be
+/// taught the judgement is a second place for it to be wrong.
+#[test]
+fn the_prose_counts_match_the_workspace() {
+    let repo = repo();
+
+    let Ok(entries) = fs::read_dir(&repo) else {
+        eprintln!("skipped: not a repository checkout");
+        return;
+    };
+
+    let mut members = 0_usize;
+    let mut published = 0_usize;
+    let mut stores = 0_usize;
+
+    for entry in entries.filter_map(Result::ok) {
+        let manifest = entry.path().join("Cargo.toml");
+        let name = entry.file_name().to_string_lossy().to_string();
+
+        if !name.starts_with("dynamic-config") || !manifest.exists() {
+            continue;
+        }
+
+        let text = fs::read_to_string(&manifest).expect("a manifest is readable");
+
+        members += 1;
+
+        if !text.contains("publish = false") {
+            published += 1;
+        }
+
+        // A store crate is one that *reads a document from somewhere else*,
+        // and depending on the shared store crate is the honest marker —
+        // the family is defined by what it uses rather than by a list here,
+        // which would need updating for exactly the reason this test exists.
+        //
+        // Two crates use it without being one, and both are named rather
+        // than pattern-matched away: the server *serves* what a store
+        // fetched, and the Python remote wheel *packages* the family.
+        let consumer = matches!(
+            name.as_str(),
+            "dynamic-config-store-core" | "dynamic-config-server" | "dynamic-config-python-remote"
+        );
+
+        if text.contains("dynamic-config-store-core") && !consumer {
+            stores += 1;
+        }
+    }
+
+    // Only the words the prose actually uses; a count that grows past this
+    // table fails loudly on the lookup rather than passing silently.
+    let word = |number: usize| -> &'static str {
+        match number {
+            6 => "six",
+            7 => "seven",
+            8 => "eight",
+            9 => "nine",
+            13 => "thirteen",
+            14 => "fourteen",
+            15 => "fifteen",
+            16 => "sixteen",
+            17 => "seventeen",
+            other => panic!("no word for {other}; add it, and check the prose"),
+        }
+    };
+
+    // Each phrase, and the number it is a claim about. A phrase that appears
+    // nowhere is not an error — prose is allowed to not say a thing — but a
+    // phrase that appears with the wrong number is.
+    let claims: [(&str, usize); 8] = [
+        ("crates in one workspace", members),
+        ("crates share", members),
+        ("crates. {} publish", members),
+        ("crates on crates.io", published),
+        ("to crates.io", published),
+        ("publish to crates.io", published),
+        ("store crates", stores),
+        ("stores ship", stores),
+    ];
+
+    let documents = [
+        "README.md",
+        "ROADMAP.md",
+        "RELEASING.md",
+        "CONTRIBUTING.md",
+        "AGENTS.md",
+    ];
+
+    let mut wrong: Vec<String> = Vec::new();
+
+    for name in documents {
+        let Some(text) = read(&repo.join(name)) else {
+            continue;
+        };
+
+        for (line_number, line) in text.lines().enumerate() {
+            let lowered = line.to_lowercase();
+
+            for (phrase, count) in claims {
+                // `{}` in a phrase stands for the *other* number in the same
+                // sentence — "Sixteen crates. Fourteen publish" — which is
+                // matched by its own row rather than here.
+                let phrase = phrase.replace("{} ", "");
+
+                for candidate in [6, 7, 8, 9, 13, 14, 15, 16, 17] {
+                    let claim = format!("{} {phrase}", word(candidate));
+
+                    if lowered.contains(&claim) && candidate != count {
+                        wrong.push(format!(
+                            "{name}:{}: says \"{claim}\", and there are {count}",
+                            line_number + 1
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    assert!(
+        wrong.is_empty(),
+        "prose that disagrees with the workspace:\n  {}",
+        wrong.join("\n  ")
+    );
+}
+
+/// The precedence chain is written in two places, and they are the same
+/// string.
+///
+/// The crate front page and the book's own chapter both draw it, because both
+/// are somebody's first page. Two copies of an ordering is two chances to be
+/// wrong about it, and one of them already was: `secrets_dir` landed in the
+/// book's chain and never reached `lib.rs`, so the front page described a
+/// layer order the loader had not had for two releases.
+#[test]
+fn the_precedence_chain_is_the_same_in_both_places() {
+    let repo = repo();
+
+    let (Some(front_page), Some(chapter)) = (
+        read(&repo.join("dynamic-config/src/lib.rs")),
+        read(&repo.join("book/src/sources-and-precedence.md")),
+    ) else {
+        eprintln!("skipped: not a repository checkout");
+        return;
+    };
+
+    /// The `set_default < … < set_override` line, with the prose stripped
+    /// off: `//! ` in Rust, nothing in Markdown.
+    fn chain(text: &str) -> Option<String> {
+        text.lines()
+            .map(|line| line.trim_start_matches("//!").trim())
+            .find(|line| line.starts_with("set_default <"))
+            .map(str::to_owned)
+    }
+
+    let front = chain(&front_page).expect("lib.rs draws the chain");
+    let book = chain(&chapter).expect("the chapter draws the chain");
+
+    assert_eq!(
+        front, book,
+        "the crate front page and the book disagree about layer order; the \
+         loader's own `LAYERS` table in `loader/mod.rs` is the tiebreak"
+    );
+}
+
+/// Every example has a row in the book's table.
+///
+/// The table is how anybody finds them, and an example nobody can find is an
+/// example nobody runs — which is the state `ini_provider` was in for two
+/// releases, with the count above the table saying twenty-seven while
+/// twenty-eight compiled.
+#[test]
+fn every_example_is_in_the_books_table() {
+    let repo = repo();
+
+    let (Ok(entries), Some(table)) = (
+        fs::read_dir(repo.join("dynamic-config/examples")),
+        read(&repo.join("book/src/examples.md")),
+    ) else {
+        eprintln!("skipped: not a repository checkout");
+        return;
+    };
+
+    let mut missing: Vec<String> = Vec::new();
+    let mut examples = 0_usize;
+
+    for entry in entries.filter_map(Result::ok) {
+        let path = entry.path();
+
+        if path.extension().and_then(|extension| extension.to_str()) != Some("rs") {
+            continue;
+        }
+
+        let stem = path
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .expect("an example has a name")
+            .to_owned();
+
+        examples += 1;
+
+        // The row links to the file, so the path is the thing to look for:
+        // a name alone would match this example being *mentioned* in another
+        // row's prose.
+        if !table.contains(&format!("examples/{stem}.rs")) {
+            missing.push(stem);
+        }
+    }
+
+    assert!(
+        missing.is_empty(),
+        "examples with no row in book/src/examples.md: {missing:?}"
+    );
+
+    // And the count in the sentence above the table.
+    let counted = match examples {
+        26 => "twenty-six",
+        27 => "twenty-seven",
+        28 => "twenty-eight",
+        29 => "twenty-nine",
+        30 => "thirty",
+        other => panic!("no word for {other} examples; add it, and check the prose"),
+    };
+
+    assert!(
+        table.to_lowercase().contains(&format!("{counted} of them")),
+        "the book says something other than \"{counted} of them\", and there \
+         are {examples}"
+    );
+}

@@ -25,7 +25,7 @@ Python bindings, and **0.6 is the clearing release** — everything that had
 been waiting for a reason other than "nobody has asked", done in one wave so
 the surface stops accumulating.
 
-**0.6 shipped** — sixteen crates on crates.io, two wheels on PyPI, the
+**0.6 shipped** — fourteen crates on crates.io, two wheels on PyPI, the
 book published, the instruction-count gate armed with a committed
 baseline. What landed is not here: the changelogs carry it,
 [README.md](README.md) describes the crate as it is, and this file keeps
@@ -258,6 +258,20 @@ candidate.
 New capability proposals queue behind stability during that window. The problem worth
 solving by then is not a missing feature; it is that nothing this
 sophisticated has been beaten up by strangers yet.
+
+### `Values.sub(path)` for the Python binding **[own]**
+
+Rust's `Snapshot::sub` hands a subsystem its own subtree — `snapshot.sub("db")`
+and everything below reads as though `db` were the whole document. The Python
+`Values` has no equivalent, so a caller passing a section to a subsystem
+either indexes twice at every read or builds a dict and loses the dotted-path
+lookup that is `Values`' whole point.
+
+It is a **new method**, which is why it is here and not in 0.6.1: that release
+is a patch, and a patch that grows a surface is a surface nobody can un-ship.
+The shape is not in doubt — `values.sub("db")` answering another `Values` over
+the same tree — and neither is the argument; what it needs is a minor release
+to land in.
 
 ### `WriteDurability` as API **[own]**
 0.1.0 fsyncs every atomic write, unconditionally. If someone measures real

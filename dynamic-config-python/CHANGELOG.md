@@ -26,6 +26,14 @@ breaking.
 
 ## [Unreleased]
 
+### Fixed
+
+- **An unknown key reads as a sentence in `check()`'s report.** It rendered
+  the dataclass `repr` — `UnknownKey(path='stray', suggestion=None)` — in the
+  middle of a table of prose, and it is the one line of a report a person has
+  to act on. It now says `stray: unknown key`, and `did you mean …?` when
+  there is a suggestion, which is what the Rust crate has always printed.
+
 ### Added
 
 - **`msgspec.Struct` is a schema.** The fifth kind of declaration, and
