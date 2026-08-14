@@ -2346,7 +2346,7 @@ dependencies = [
 
 [[package]]
 name = "dynamic-config-python"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "dynamic-config",
  "pyo3",
@@ -2355,7 +2355,7 @@ dependencies = [
 
 [[package]]
 name = "dynamic-config-python-remote"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "aws-config",
  "aws-credential-types",

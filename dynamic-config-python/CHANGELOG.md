@@ -26,6 +26,8 @@ breaking.
 
 ## [Unreleased]
 
+## 0.1.2 — 2026-08-14
+
 ### Added
 
 - **`Values.sub(path)`**: the subtree at a path, as a `Values` of its own.
