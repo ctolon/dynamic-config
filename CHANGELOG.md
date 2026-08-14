@@ -25,6 +25,22 @@ bumps the patch. A change to the minimum supported Rust version is breaking.
 
 ## [Unreleased]
 
+### Added
+
+- **Node.js bindings**, as `dynamic-config` on npm: the engine, the
+  watcher, the runtime layers, remote sources written in JavaScript and
+  the whole diagnostic surface, through Node-API. A validator is a
+  function, so Zod, Ajv or a plain function of your own all work and none
+  of them is a dependency; `DynamicConfig<T>` is generic over whatever the
+  validator returns, so `current()` is `T` under `strict: true`.
+
+  The load runs on a worker thread and reaches the event loop only to
+  validate and to fire hooks — which is what keeps the property this whole
+  design is for: a document the schema refuses installs nothing and leaves
+  the previous one serving, from the watcher exactly as from an explicit
+  reload. It is also why there is no `initSync`: a synchronous load would
+  be the loop waiting for itself.
+
 ### Fixed
 
 - **Four counts in the prose that the workspace had outgrown**, and a test

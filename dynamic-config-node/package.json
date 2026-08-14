@@ -1,0 +1,37 @@
+{
+  "name": "dynamic-config",
+  "version": "0.0.1",
+  "description": "Hot-reloadable configuration for Node.js: Rust resolves, your schema validates",
+  "keywords": ["config", "configuration", "hot-reload", "settings", "watch", "zod", "napi-rs"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ctolon/dynamic-config.git",
+    "directory": "dynamic-config-node"
+  },
+  "homepage": "https://ctolon.github.io/dynamic-config/node/",
+  "engines": {
+    "node": ">= 18"
+  },
+  "main": "js/index.js",
+  "types": "js/index.d.ts",
+  "files": ["js/", "index.node", "README.md", "LICENSE"],
+  "napi": {
+    "binaryName": "dynamic-config",
+    "targets": [
+      "x86_64-unknown-linux-gnu",
+      "aarch64-unknown-linux-gnu",
+      "x86_64-apple-darwin",
+      "aarch64-apple-darwin",
+      "x86_64-pc-windows-msvc"
+    ]
+  },
+  "scripts": {
+    "build": "napi build --platform --release --cargo-cwd .. --cargo-name dynamic-config-node",
+    "build:debug": "napi build --platform --cargo-cwd .. --cargo-name dynamic-config-node",
+    "test": "node --test tests/"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^3.0.0"
+  }
+}

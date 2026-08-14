@@ -176,7 +176,7 @@ and an eighth done casually would be worse than none.
 
 ### One book, or a book per crate **[own]**
 
-Sixteen crates share one mdBook, and the chapters that are *about a crate*
+Seventeen crates share one mdBook, and the chapters that are *about a crate*
 rather than about the engine are already the majority of it: eight store
 pages, the config server and its threat model, the CLI, ten Python pages.
 They are correct and they are in the wrong place — a reader who has added

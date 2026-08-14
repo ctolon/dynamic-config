@@ -235,10 +235,10 @@ fn the_readmes_agree_on_one_version() {
     // A README that contributes *nothing* is the exact regression this gate
     // exists for — a snippet deleted, or rewritten into a shape the parser
     // no longer sees — so per-file accounting is part of the assertion.
-    // Two crates are legitimately exempt: the CLI and the Python
-    // extension are *installed* rather than depended on (`cargo install`,
-    // `pip install`), and neither install line carries a version by
-    // design.
+    // Three crates are legitimately exempt: the CLI, the Python extension
+    // and the Node addon are *installed* rather than depended on (`cargo
+    // install`, `pip install`, `npm install`), and none of those install
+    // lines carries a version by design.
     let mut empty: Vec<String> = Vec::new();
 
     for readme in &readmes {
@@ -272,8 +272,9 @@ fn the_readmes_agree_on_one_version() {
 
         let contributed = versions.values().map(Vec::len).sum::<usize>() > before;
         let rendered = readme.display().to_string();
-        let exempt =
-            rendered.contains("dynamic-config-cli") || rendered.contains("dynamic-config-python");
+        let exempt = rendered.contains("dynamic-config-cli")
+            || rendered.contains("dynamic-config-python")
+            || rendered.contains("dynamic-config-node");
 
         if !contributed && !exempt {
             empty.push(readme.display().to_string());

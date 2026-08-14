@@ -13,8 +13,8 @@ the eleven companions' alike. The pre-release hook rewrites them all
 behind anyway. The book never carries the number at all —
 its snippets say `<version>`.
 
-Sixteen crates in one workspace, one version, published together —
-fourteen to crates.io, two to PyPI:
+Seventeen crates in one workspace, one version, published together —
+fourteen to crates.io, two to PyPI, one to npm:
 
 ```text
 dynamic-config-macros      the proc macro; no stable API of its own

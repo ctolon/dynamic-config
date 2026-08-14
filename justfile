@@ -186,6 +186,23 @@ containers:
                -p dynamic-config-redis -p dynamic-config-s3 \
                -p dynamic-config-firestore
 
+# The Node bindings: build the addon, then run the suite and the examples
+# against it. Needs Node 18 or newer; nothing else — the suite is
+# `node --test` and the facade is JavaScript with a hand-written `.d.ts`,
+# so `npm install` is not part of this.
+#
+# `CARGO_TARGET_DIR` is shared with the workspace here, unlike the two
+# Python recipes: this crate's cdylib has a name of its own, so nothing
+# collides.
+node:
+    cargo build -p dynamic-config-node
+    cp target/debug/libdynamic_config_node.so dynamic-config-node/index.node
+    cd dynamic-config-node && node --test "tests/*.test.js"
+    cd dynamic-config-node && node examples/01-quick-start.mjs > /dev/null
+    # 02 and 03 need express and zod; they say so and exit cleanly without.
+    cd dynamic-config-node && node examples/02-express.mjs > /dev/null
+    cd dynamic-config-node && node examples/03-zod.mjs > /dev/null
+
 # Chaos: a store unplugged mid-watch, and put back.
 #
 # Needs Docker, and starts *two* containers per test — the store, and a

@@ -384,6 +384,45 @@ jobs:
             python "$example" > /dev/null
           done
 
+  node:
+    name: the Node bindings
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # Every line the package claims. Node-API is ABI-stable across
+        # them, which is the whole reason this binding is napi-rs and not
+        # a per-version build — but "ABI-stable" is a claim about the
+        # addon, and the JavaScript half is ordinary code that a version
+        # can break.
+        node: ["18", "20", "22", "24"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v5
+        with:
+          node-version: ${{ matrix.node }}
+      - run: cargo build -p dynamic-config-node --release
+      - run: cp target/release/libdynamic_config_node.so dynamic-config-node/index.node
+      - run: node --test "tests/*.test.js"
+        working-directory: dynamic-config-node
+      # The examples are documentation people run, so they run here. Two of
+      # them want a framework; they say so and exit cleanly without one,
+      # which is why they are installed rather than skipped.
+      - run: npm install --no-save --no-fund --no-audit express zod
+        working-directory: dynamic-config-node
+      - name: every example
+        working-directory: dynamic-config-node
+        run: |
+          for example in examples/*.mjs; do
+            echo "── $example"
+            node "$example" > /dev/null
+          done
+
   python-free-threaded:
     name: the Python bindings, without a GIL
     runs-on: ubuntu-latest
@@ -878,6 +917,7 @@ jobs:
       - python
       - python-free-threaded
       - python-remote
+      - node
       - bench
       - coverage
       - msrv

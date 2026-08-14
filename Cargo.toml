@@ -16,6 +16,7 @@ members = [
     "dynamic-config-server",
     "dynamic-config-python",
     "dynamic-config-python-remote",
+    "dynamic-config-node",
 ]
 resolver = "2"
 
