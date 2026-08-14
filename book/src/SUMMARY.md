@@ -34,6 +34,7 @@
 - [Dynamic Instances](dynamic-instances.md)
 - [Schemaless Configuration](schemaless.md)
 - [Without the Macro](without-the-macro.md)
+- [Patterns & Style](patterns.md)
 - [Testing Your Config](testing.md)
 - [The CLI](cli.md)
 - [The Config Server](config-server.md)

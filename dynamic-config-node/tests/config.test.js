@@ -325,6 +325,89 @@ test("current() before init says what to do about it", () => {
   assert.throws(() => config.current(), /await init/);
 });
 
+test("setDefaults takes a whole object, and a file still beats it", async () => {
+  const { path } = workspace('[db]\nhost = "from-file"\n');
+
+  const config = await new DynamicConfig({ key: "db" })
+    .setDefaults({ host: "default", port: 5432, pool: { maxSize: 8 } })
+    .file(path)
+    .init();
+
+  assert.deepEqual(config.current(), {
+    host: "from-file",
+    port: 5432,
+    pool: { maxSize: 8 },
+  });
+});
+
+test("strictEnv refuses an ambiguous spelling rather than guessing at it", async () => {
+  // `off` reads like a boolean and arrives as the string "off": silently
+  // correct in a string field and silently wrong everywhere else. Strict
+  // mode makes the yes/no/on/off family an error naming the variable.
+  process.env.DCNTEST_DB_TLS = "off";
+
+  try {
+    const loose = await new DynamicConfig({ key: "db" }).env("DCNTEST_").init();
+
+    assert.equal(loose.get("tls"), "off", "loose is the default, and it guesses nothing");
+
+    const strict = new DynamicConfig({ key: "db" }).env("DCNTEST_").strictEnv();
+
+    await assert.rejects(() => strict.init(), (error) => {
+      assert.equal(error.kind, "env");
+      assert.match(error.message, /DCNTEST_DB_TLS/);
+
+      return true;
+    });
+  } finally {
+    delete process.env.DCNTEST_DB_TLS;
+  }
+});
+
+test("replace installs a document without loading anything", async () => {
+  const { path } = workspace('[db]\nhost = "from-file"\n');
+  const seen = [];
+
+  const config = await new DynamicConfig({ key: "db", validate: database }).file(path).init();
+
+  config.onReload((document) => seen.push(document.host));
+  config.replace({ host: "handed-over", port: 1 });
+
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(config.current().host, "handed-over");
+  assert.equal(config.generation, 2, "it counts as an install");
+  assert.deepEqual(seen, ["handed-over"], "and fires the hooks");
+});
+
+test("changes() yields every installed document, and stops when the loop does", async () => {
+  const { path, write } = workspace('[db]\nhost = "first"\n');
+  const config = await new DynamicConfig({ key: "db", validate: database }).file(path).init();
+
+  const seen = [];
+  const consumer = (async () => {
+    for await (const document of config.changes()) {
+      seen.push(document.host);
+
+      if (seen.length === 2) {
+        break;
+      }
+    }
+  })();
+
+  await new Promise((resolve) => setImmediate(resolve));
+
+  write('[db]\nhost = "second"\n');
+  await config.reload();
+  write('[db]\nhost = "third"\n');
+  await config.reload();
+
+  await consumer;
+
+  assert.deepEqual(seen, ["second", "third"]);
+  assert.equal(config.generation, 3, "and the loop leaving did not stop the reloads");
+});
+
 test("both versions are reported, because they move on two schedules", () => {
   assert.match(packageVersion(), /^\d+\.\d+\.\d+$/);
   assert.match(engineVersion(), /^\d+\.\d+\.\d+$/);

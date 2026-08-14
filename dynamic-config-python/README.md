@@ -55,6 +55,19 @@ secret declared as `Meta(extra={"secret": True})`.
 `current()` returns a cached instance, so reading configuration on every
 request costs an attribute lookup rather than a boundary crossing.
 
+## Python versions
+
+| Line | Wheel | Tested |
+|---|---|---|
+| 3.9 – 3.14 | one abi3 wheel per platform | every commit, every line |
+| 3.14t (free-threaded) | its own `cp314t` wheel | every commit, concurrency suite ten times over |
+| 3.8 and older | — | not supported; `requires-python` refuses |
+
+Linux (manylinux 2_28) x86-64 and aarch64, macOS x86-64 and arm64, Windows
+x86-64. Raising the floor is treated as a breaking change and will not
+happen before 1.0. The full table, and what each row is tested with, is in
+[Stability & Production Use](https://ctolon.github.io/dynamic-config/python/stability.html).
+
 ## What it gives you
 
 ```python

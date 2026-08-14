@@ -99,8 +99,62 @@ kept.
 in it and a git URL with a token are both redacted by the store crates'
 own rule, so an error message is safe to log.
 
-Three things are deliberately not there yet, each a decision rather than a
-gap: **callable credentials** that mint a fresh token (rebuild the store
-instead — one line), **TLS material from bytes**, and the stores' own
-**watch loops**. `installed.refresh()` on a timer is the shape, and it is
-what `refresh_remote()` is in Rust.
+### A credential may be a function
+
+A string is right for a token an operator pasted into a deployment, and
+wrong for one that rotates — a projected service-account token, a Vault
+lease, a Google access token that lives an hour. So `tokenFn` (and
+Firestore's `accessTokenFn`) is called **on the event loop before each
+fetch**, which is where your `readFileSync`, your cloud SDK and your own
+cache live:
+
+```ts
+new Vault("https://vault:8200", "secret", "myapp/db", null, null, null,
+  () => readFileSync("/var/run/secrets/vault-token", "utf8"))
+```
+
+### TLS, as files or as bytes
+
+```ts
+new Consul(address, key, null, null, null, null, null, {
+  caCertificateFile: "/etc/ssl/private-ca.pem",
+  clientCertificateFile: "/etc/ssl/app.crt",
+  clientKeyFile: "/etc/ssl/app.key",
+})
+```
+
+Both shapes, because both are real: a Kubernetes secret is a mounted file
+and a certificate fetched at startup is bytes. Saying nothing means the
+platform's trust store, not *no TLS*.
+
+### Watching a store
+
+Four of them push, and those can be watched:
+
+```ts
+const handle = store.watch(
+  (document) => console.log("the store moved", document),
+  (failure) => console.error("the watch ended", failure.error),
+)
+
+handle.stop()
+```
+
+| Store | How it notices |
+|---|---|
+| `Consul` | a blocking query — the agent holds the request open |
+| `Redis` | keyspace notifications |
+| `Etcd` | a watch stream, re-read at the event's own revision |
+| `Nats` | a JetStream watch |
+
+The loop is a thread of its own and reaches the event loop only to
+deliver, exactly as the file watcher does.
+
+**Vault, S3, Firestore and git have no `watch`, and that is not a gap**:
+their Rust watch loops *poll* — a version counter, an ETag, an update
+time, a commit — so `setInterval(() => installed.refresh(), 30_000)` is
+the same thing with one fewer thread, and it is a line you can read.
+
+A store watch hands you a **document**; `useStore` is what installs one.
+Keeping those apart is what lets a caller log a change, or refuse it,
+before the engine has acted on it.

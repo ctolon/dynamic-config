@@ -29,6 +29,7 @@ reload and nowhere in the document that is serving.
 | `env(prefix)` | `PREFIX_KEY_*` from the environment |
 | `nest(separator)` | what spells nesting in a variable name; `__` by default |
 | `allowEmptyEnv()` | treat an empty variable as a value rather than as absent |
+| `strictEnv()` | refuse an ambiguous spelling — `off`, `yes`, `none` — instead of guessing |
 | `wholeDocument()` | the file has no section header: its whole document is this section |
 | `envFile(path)` | a `.env`, which sits just below the real environment |
 | `secretsDir(path)` | one file per key, as Docker and Kubernetes mount |
@@ -40,6 +41,7 @@ reload and nowhere in the document that is serving.
 | Call | Where it sits |
 |---|---|
 | `setDefault(path, value)` | the bottom: a fallback the program computes |
+| `setDefaults(values)` | a whole object at once: every leaf of it is a default |
 | `setOverride(path, value)` | the top: wins over everything |
 | `setAssignments(["db.port=1"])` | `--set` pairs, above the environment |
 | `bindEnv(path, variable)` | one path to one variable, whatever the prefix rule says |
@@ -59,6 +61,8 @@ All four take effect on the next load.
 | `current()` | the document in force. Throws before the first install |
 | `tryCurrent()` | that, or `undefined` |
 | `get(path, fallback?)` | one value by dotted path |
+| `replace(document)` | installs a document directly, without loading: the testing door |
+| `changes()` | an async iterator of every installed document |
 | `generation` | how many documents have been installed |
 
 ## Watching and hooks

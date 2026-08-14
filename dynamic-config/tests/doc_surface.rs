@@ -115,6 +115,25 @@ fn generates_section(text: &str, heading: &str) -> Vec<String> {
     rows
 }
 
+/// Every `.md` under `directory`, as paths relative to the repository.
+fn collect_markdown(directory: &Path, into: &mut Vec<PathBuf>, repo: &Path) {
+    let Ok(entries) = fs::read_dir(directory) else {
+        return;
+    };
+
+    for entry in entries.filter_map(Result::ok) {
+        let path = entry.path();
+
+        if path.is_dir() {
+            collect_markdown(&path, into, repo);
+        } else if path.extension().and_then(|extension| extension.to_str()) == Some("md") {
+            if let Ok(relative) = path.strip_prefix(repo) {
+                into.push(relative.to_path_buf());
+            }
+        }
+    }
+}
+
 fn read(path: &Path) -> Option<String> {
     fs::read_to_string(path).ok()
 }
@@ -396,20 +415,32 @@ fn the_prose_counts_match_the_workspace() {
         ("stores ship", stores),
     ];
 
-    let documents = [
+    // The five top-level documents, and every page of all three books —
+    // which is where "the seven store crates" survived two releases after
+    // git made it eight, because nothing counted them.
+    let mut documents: Vec<PathBuf> = [
         "README.md",
         "ROADMAP.md",
         "RELEASING.md",
         "CONTRIBUTING.md",
         "AGENTS.md",
-    ];
+    ]
+    .iter()
+    .map(PathBuf::from)
+    .collect();
+
+    for book in ["book/src", "book-python/src", "book-node/src"] {
+        collect_markdown(&repo.join(book), &mut documents, &repo);
+    }
 
     let mut wrong: Vec<String> = Vec::new();
 
-    for name in documents {
+    for name in &documents {
         let Some(text) = read(&repo.join(name)) else {
             continue;
         };
+
+        let name = name.display();
 
         for (line_number, line) in text.lines().enumerate() {
             let lowered = line.to_lowercase();

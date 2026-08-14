@@ -47,10 +47,10 @@ whose dependency cannot be made optional.
 
 ### Fewer official store backends
 
-The seven exist, are tested against real servers, and are marked
-Experimental. Withdrawing shipped crates punishes their users to save
-unshipped maintenance. Revisited per crate if one's client dependency
-becomes unmaintainable.
+The eight exist, are tested against real servers, and are Beta as of
+0.6.1. Withdrawing shipped crates punishes their users to save unshipped
+maintenance. Revisited per crate if one's client dependency becomes
+unmaintainable.
 
 ### Nested profiles from figment
 
@@ -126,7 +126,7 @@ this one growing a dependency.
 
 ### Independent instances
 
-Viper needs them because its default instance is a global. Here every
+Example Go Viper needs them because its default instance is a global. Here every
 configuration type already has its own storage, keyed by the type — the same
 isolation without the bookkeeping.
 

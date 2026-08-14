@@ -15,6 +15,7 @@ const assert = require("node:assert/strict");
 
 const stores = require("../js/index.js");
 const { DynamicConfigError } = require("dynamic-config-node");
+const { setTimeout: sleep } = require("node:timers/promises");
 
 /** Every store, constructed the smallest way each one allows. */
 function each() {
@@ -135,6 +136,86 @@ test("useStore installs a document and keeps it current", async () => {
 
   assert.equal(config.current().host, "second");
   assert.equal(config.remoteStatus().fetches, 2);
+});
+
+test("the four push stores can be watched, and stopping is idempotent", async () => {
+  // A watch against a port nothing listens on: what is asserted is the
+  // handle, not a delivery — the loop reports its failure through the
+  // error callback and `stop()` ends it either way. A document actually
+  // arriving is the store crates' container suites.
+  const failures = [];
+  const watched = [
+    new stores.Consul("http://127.0.0.1:9", "myapp/db.json"),
+    new stores.Redis("redis://127.0.0.1:9", "myapp/db.json"),
+    new stores.Etcd(["http://127.0.0.1:9"], "myapp/db.json"),
+    new stores.Nats("nats://127.0.0.1:9", "config", "db.json"),
+  ];
+
+  const handles = watched.map((store) =>
+    store.watch(
+      () => assert.fail("nothing is listening on port 9"),
+      (failure) => failures.push(failure),
+    ),
+  );
+
+  await sleep(300);
+
+  for (const handle of handles) {
+    handle.stop();
+    handle.stop(); // idempotent, and the second one must not hang
+  }
+
+  // Every one of them reported *something*: a connection refused, a
+  // subscription that would not open, a stream that never established.
+  assert.ok(failures.length > 0, "a watch that cannot start says so");
+
+  for (const failure of failures) {
+    assert.equal(failure.ok, false);
+    assert.ok(["remote", "auth", "io", "backend"].includes(failure.error.kind), failure.error.kind);
+  }
+});
+
+test("a credential function is called before each fetch", async () => {
+  let minted = 0;
+
+  const store = new stores.Consul(
+    "http://127.0.0.1:9",
+    "myapp/db.json",
+    null,
+    null,
+    null,
+    null,
+    () => {
+      minted += 1;
+
+      return `token-${minted}`;
+    },
+  );
+
+  // Two fetches, two mints: a token that rotated is a token the store must
+  // not have been holding.
+  await store.fetch();
+  await store.fetch();
+
+  assert.equal(minted, 2, "the function is called per fetch, not per store");
+});
+
+test("TLS material is accepted as files and as bytes", () => {
+  // Neither is used here — nothing listens — but both shapes have to be
+  // *constructible*, because a Kubernetes secret is a mounted file and a
+  // certificate fetched at startup is bytes that never touch a disk.
+  const withFiles = new stores.Consul("https://127.0.0.1:9", "k", null, null, null, null, null, {
+    caCertificateFile: "/etc/ssl/ca.pem",
+    clientCertificateFile: "/etc/ssl/app.crt",
+    clientKeyFile: "/etc/ssl/app.key",
+  });
+
+  const withBytes = new stores.Vault("https://127.0.0.1:9", "secret", "p", null, null, null, null, {
+    caCertificatePem: "-----BEGIN CERTIFICATE-----\nnot a real one\n-----END CERTIFICATE-----",
+  });
+
+  assert.match(withFiles.describe(), /consul/);
+  assert.match(withBytes.describe(), /vault/);
 });
 
 test("both versions are reported", () => {

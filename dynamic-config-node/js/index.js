@@ -202,6 +202,17 @@ class DynamicConfig {
     return this;
   }
 
+  /**
+   * Refuse an environment value this crate cannot type rather than
+   * guessing: `APP_DB_PORT=eight` becomes a load failure instead of a
+   * string where a number was declared.
+   */
+  strictEnv() {
+    unwrap(this.#native.strictEnv());
+
+    return this;
+  }
+
   /** The file has no section header: its whole document is this section. */
   wholeDocument() {
     unwrap(this.#native.wholeDocument());
@@ -248,6 +259,18 @@ class DynamicConfig {
   /** A fallback the program computes; the bottom layer. */
   setDefault(path, value) {
     unwrap(this.#native.setDefault(path, value));
+
+    return this;
+  }
+
+  /**
+   * A whole object as defaults at once, rather than a path at a time.
+   *
+   * What a hand-written `defaults()` becomes: every leaf is a default, and
+   * a file that states any of them wins.
+   */
+  setDefaults(values) {
+    unwrap(this.#native.setDefaults(values));
 
     return this;
   }
@@ -399,6 +422,72 @@ class DynamicConfig {
 
     this.#cached = document === null ? undefined : document;
     this.#generation = this.#native.generation();
+  }
+
+  /**
+   * Installs `document` directly, without loading anything.
+   *
+   * The testing door, and the one for configuration that comes from
+   * somewhere this library does not know about. It bumps the generation
+   * and fires the hooks exactly as a load does; what it skips is the
+   * sources and the validator, because the caller is asserting they
+   * already did that.
+   */
+  replace(document) {
+    unwrap(this.#native.replace(document));
+    this.#pull();
+
+    return this;
+  }
+
+  /**
+   * Every installed document, as an async iterator.
+   *
+   * The shape a service loop wants — and the reason it exists rather than
+   * `onReload` alone: a hook runs *inside* the reload, and anything slow
+   * in one holds the next. This yields on the loop, after the install,
+   * where an `await` costs the caller and nobody else.
+   *
+   * ```js
+   * for await (const document of config.changes()) {
+   *   await pool.resize(document.pool.maxSize)
+   * }
+   * ```
+   *
+   * Documents are queued, so a slow consumer misses nothing — and the
+   * queue is bounded at one *behind* the current document, because a
+   * configuration reader wants the latest rather than the history.
+   */
+  async *changes() {
+    let pending;
+    let wake;
+
+    const token = this.onReload((document) => {
+      // The newest wins: a consumer that fell behind wants the document
+      // in force, not the three it missed on the way here.
+      pending = document;
+      wake?.();
+    });
+
+    try {
+      for (;;) {
+        if (pending === undefined) {
+          await new Promise((resolve) => {
+            wake = resolve;
+          });
+        }
+
+        const document = pending;
+
+        pending = undefined;
+        wake = undefined;
+
+        yield document;
+      }
+    } finally {
+      // A `break` or a `return` in the caller's loop lands here.
+      this.removeHook(token);
+    }
   }
 
   /** How many documents have been installed. */

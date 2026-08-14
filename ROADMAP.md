@@ -4,8 +4,7 @@ What is not in the crate yet and might be. Everything that shipped is described
 in [README.md](README.md); what will *not* be built, and why, is under
 [Not planned](book/src/limitations.md#not-planned) there.
 
-Tags: **[viper]** exists in Go's [Viper](https://github.com/spf13/viper) and does
-not here. **[figment]** is something the underlying loader,
+Tags: **[figment]** is something the underlying loader,
 [figment](https://docs.rs/figment), can do that this crate does not expose.
 **[own]** is neither — an idea from using the thing.
 
@@ -57,8 +56,18 @@ fails a pull request that regresses past the limits
 all seven network stores, and git needs none of it because its watch is a
 poll and a poll is a fetch.
 
-**0.6.1 is the release being built now**, and it is a maintenance one by
-construction — a patch, so nothing in it may change a public signature.
+**0.6.1 is the release being built now**, and it is the last one that adds
+anything. Every crate and package moves to **Beta** with it: the store
+crates' surfaces stopped moving two releases ago, each is tested against a
+real server, each watch loop's failure branches are enumerated in its own
+documentation, and three of them are unplugged mid-watch by `just chaos`.
+
+**After it, only security fixes and hotfixes until 1.0.** No new sources,
+no new stores, no new methods on the settled types. What still ships is a
+defect that produces a wrong answer, a security advisory, and
+documentation — each as a patch. Anything that would be nicer is a 1.0
+candidate, written down here with its argument rather than slipped into a
+0.x.
 What it carries: the failure-branch *audit* behind the wiring above, with
 chaos tests that unplug each store; a documentation and manifest sweep; a
 Python book of its own; msgspec as a fifth Python schema; Node.js
@@ -89,8 +98,9 @@ Two 0.6 answers are worth keeping in view because they will be asked again:
 need for, the [runtime-agnostic S3 sleep](#runtime-agnostic-s3-watch-sleep-own)
 that is blocked on the AWS SDK, [serde_yaml](#serde_yamls-future-own) which
 moves when figment moves, [a ninth store](#a-store-nobody-has-asked-for-yet-own)
-nobody has asked for, and [a book per crate](#one-book-or-a-book-per-crate-own) — where
-the answer is probably per-crate entry *points* rather than fourteen books.
+nobody has asked for. The book question is
+[answered](#one-book-or-a-book-per-crate--answered-three-books-own): three
+books, one per audience.
 
 ---
 
@@ -174,52 +184,26 @@ and an eighth done casually would be worse than none.
 
 ## Documentation
 
-### One book, or a book per crate **[own]**
+### One book, or a book per crate — **answered: three books** **[own]**
 
-Eighteen crates share one mdBook, and the chapters that are *about a crate*
-rather than about the engine are already the majority of it: eight store
-pages, the config server and its threat model, the CLI, ten Python pages.
-They are correct and they are in the wrong place — a reader who has added
-`dynamic-config-vault` to a project does not want the engine's builder tour
-first, and a store's own README is a paragraph pointing at a page in
-somebody else's book.
+Three, one per audience, and the question is closed. `book/` is the Rust
+book, `book-python/` and `book-node/` are the bindings', all three
+published from one Pages deployment as `/dynamic-config/`,
+`/dynamic-config/python/` and `/dynamic-config/node/`.
 
-**What a per-crate book would buy.** docs.rs already builds one thing per
-crate; a book beside it would match how the crates are actually consumed
-(one store at a time), let a store's chapter carry its own version, and stop
-the root book growing a section per crate forever.
+**A book per crate is not happening**, and the reason is the one the
+argument kept returning to: half the value of a store chapter is that it
+can say *this is the same `TlsConfig` every other store takes* and link to
+it. Split into fourteen books, that becomes an inter-book link no tool
+checks, and fourteen mdBook builds and fourteen link-check runs to
+maintain it. The split that *was* worth making is by **language**, because
+a Python or Node reader is not a Rust reader who wants a shorter chapter —
+they are somebody who will never write `#[dynamic_config]`.
 
-**What it would cost, and this is the decision.** Fourteen mdBook builds in
-CI instead of one, fourteen link-check runs, and — the part that is not
-mechanical — the cross-references. Half the value in the store chapters is
-that they can say *this is the same `TlsConfig` every other store takes* and
-link to it; split, that becomes an inter-book link that no tool checks and
-that breaks silently when a page is renamed. The Python pages are worse:
-they are the same engine described for another language, and half of what
-they say is "as the Rust side does, here".
-
-**The shape that is probably right** is neither: keep one book and make the
-per-crate entry points real. A `book/src/crates/{name}.md` per crate, linked
-from that crate's README as its front door, holding what is specific to it
-and linking inward for what is shared — so a reader arriving from crates.io
-lands on their crate and not on chapter one, without splitting a link graph
-that is doing real work. It is worth doing when a store's chapter is long
-enough that this is not just a redirect; today two of them are.
-
-**One split is decided, it is not this one, and it has landed: a book per
-*binding*.** A Python reader is not a Rust reader who wants a shorter
-chapter — they are somebody who will never write `#[dynamic_config]`,
-arriving from PyPI into twenty chapters of Rust. That argument does not
-apply to a store crate, whose chapter is read by exactly the person who
-read the builder tour, so the store pages stay. 0.6.1 moved the Python
-chapters into `book-python/`, published into the Rust book's own output as
-`/dynamic-config/python/` — the URL those chapters already had, so nothing
-that linked to them moved, and `/dynamic-config/python.html` is a stub that
-links onward. The cost is what was predicted: the inward links became
-absolute URLs, and the link checker takes both books' sources so they are
-verified like any other external link. The Node binding got the third book of the same
-shape, at `/dynamic-config/node/`, which is the decision applied twice
-rather than argued twice.
+What remains available, and costs nothing to add later if a store chapter
+ever grows long enough to need it, is a per-crate *entry point*: a page in
+the Rust book that a crate's README links to as its front door. Today two
+of the store chapters would be a redirect, which is why there is not one.
 
 ---
 
@@ -259,20 +243,6 @@ candidate.
 New capability proposals queue behind stability during that window. The problem worth
 solving by then is not a missing feature; it is that nothing this
 sophisticated has been beaten up by strangers yet.
-
-### `Values.sub(path)` for the Python binding **[own]**
-
-Rust's `Snapshot::sub` hands a subsystem its own subtree — `snapshot.sub("db")`
-and everything below reads as though `db` were the whole document. The Python
-`Values` has no equivalent, so a caller passing a section to a subsystem
-either indexes twice at every read or builds a dict and loses the dotted-path
-lookup that is `Values`' whole point.
-
-It is a **new method**, which is why it is here and not in 0.6.1: that release
-is a patch, and a patch that grows a surface is a surface nobody can un-ship.
-The shape is not in doubt — `values.sub("db")` answering another `Values` over
-the same tree — and neither is the argument; what it needs is a minor release
-to land in.
 
 ### `WriteDurability` as API **[own]**
 0.1.0 fsyncs every atomic write, unconditionally. If someone measures real

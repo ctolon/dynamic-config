@@ -57,6 +57,17 @@ package name.
   Windows x64, published as optional dependencies with npm provenance, so
   an install downloads one binary and compiles nothing.
 
+- **`changes()`**, an async iterator of every installed document — the
+  shape a service loop wants, and the one where an `await` costs the
+  caller rather than the reload. Breaking out of the loop removes the
+  subscription.
+- **`replace(document)`**: installs a document directly, without sources
+  and without the validator, for a test and for configuration that came
+  from somewhere this library did not fetch.
+- **`setDefaults(values)`** — a whole object at once — and **`strictEnv()`**,
+  which refuses `off`/`yes`/`none` instead of handing over the string.
+  Both are what the Python binding has, and this is the parity pass.
+
 ### Notes
 
 - **There is no `initSync`.** Validation happens inside the load, so the

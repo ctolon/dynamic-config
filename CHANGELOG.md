@@ -55,7 +55,31 @@ bumps the patch. A change to the minimum supported Rust version is breaking.
   surface rather than through each other's internals. `useStore` is the
   bridge: a round trip must not sit on the event loop, and the remote
   layer is filled from a worker thread and must be handed a synchronous
-  answer.
+  answer. Credentials may be **functions** that mint a fresh token per
+  fetch, TLS material may be files *or* bytes, and the four stores that
+  push — Consul, Redis, etcd, NATS — can be watched.
+- **The Node binding caught up with the Python one**: `changes()` as an
+  async iterator, `replace(document)` for a document this library did not
+  fetch, `setDefaults(values)` for a whole object at once, and
+  `strictEnv()`. What is deliberately still absent is `initSync`, and the
+  book says why where a reader meets it.
+- **A version table per binding**, the shape the Rust book's MSRV table
+  is: which Python lines and which Node lines are supported, which are
+  tested, and that raising either floor is a breaking change.
+- **A `Patterns & Style` chapter in all three books** — one configuration
+  per subsystem, read `current()` where you use it, hooks wake things
+  rather than doing the work, what belongs in CI and what at startup, and
+  the naming the files and variables use.
+- **`Values.sub(path)`** in the Python binding: the subtree at a path, as
+  a `Values` of its own, so a subsystem can be handed a section without
+  being told where in the document it sits. `Snapshot::sub` is the Rust
+  equivalent.
+- **Every crate and package is Beta**, and the store crates' promotion is
+  evidence rather than time: each is tested against a real server, each
+  watch loop's failure branches are enumerated in its own documentation,
+  and three are unplugged mid-watch by `just chaos`. **After 0.6.1, only
+  security fixes and hotfixes until 1.0** — the three books say so where a
+  reader will meet it.
 
 ### Changed
 

@@ -24,14 +24,46 @@ export interface Outcome<T> {
   };
 }
 
+/** TLS material: files, bytes, or nothing at all (the platform's trust store). */
+export interface Tls {
+  caCertificateFile?: string;
+  caCertificatePem?: string;
+  clientCertificateFile?: string;
+  clientKeyFile?: string;
+  clientCertificatePem?: string;
+  clientKeyPem?: string;
+}
+
+/** A running watch, and the handle that ends it. */
+export interface Watching {
+  /** Idempotent, and it waits for the loop to notice. */
+  stop(): void;
+}
+
 /** What every store here answers. */
 export interface Store {
   fetch(): Promise<Outcome<Document>>;
   describe(): string;
 }
 
+/**
+ * A store whose protocol pushes, so it can be watched rather than polled.
+ *
+ * Consul (a blocking query), Redis (keyspace notifications), etcd (a watch
+ * stream) and NATS (a JetStream watch). The other four are polled by their
+ * Rust watch loops too, so `setInterval(() => installed.refresh(), ms)` in
+ * JavaScript is the same thing with one fewer thread — which is why they
+ * do not have this method.
+ */
+export interface Watchable extends Store {
+  watch(
+    onChange: (document: Document) => void,
+    onError?: (failure: Outcome<never>) => void,
+  ): Watching;
+}
+
 /** Consul's key/value store. */
-export class Consul implements Store {
+export class Consul implements Watchable {
   constructor(
     address: string,
     key?: string | null,
@@ -39,9 +71,16 @@ export class Consul implements Store {
     prefix?: string | null,
     format?: "json" | "toml" | "yaml" | null,
     token?: string | null,
+    /** Called on the event loop before each fetch, for a token that rotates. */
+    tokenFn?: (() => string) | null,
+    tls?: Tls | null,
     timeoutMs?: number | null,
   );
   fetch(): Promise<Outcome<Document>>;
+  watch(
+    onChange: (document: Document) => void,
+    onError?: (failure: Outcome<never>) => void,
+  ): Watching;
   describe(): string;
 }
 
@@ -54,6 +93,9 @@ export class Vault implements Store {
     paths?: string[] | null,
     format?: "json" | "toml" | "yaml" | null,
     token?: string | null,
+    /** Vault's tokens have leases; this is how a long process keeps one. */
+    tokenFn?: (() => string) | null,
+    tls?: Tls | null,
     timeoutMs?: number | null,
   );
   fetch(): Promise<Outcome<Document>>;
@@ -61,21 +103,26 @@ export class Vault implements Store {
 }
 
 /** A Redis key, or a named list of them. The credential rides in the URL. */
-export class Redis implements Store {
+export class Redis implements Watchable {
   constructor(
     url: string,
     key?: string | null,
     keys?: string[] | null,
     prefix?: string | null,
     format?: "json" | "toml" | "yaml" | null,
+    tls?: Tls | null,
     timeoutMs?: number | null,
   );
   fetch(): Promise<Outcome<Document>>;
+  watch(
+    onChange: (document: Document) => void,
+    onError?: (failure: Outcome<never>) => void,
+  ): Watching;
   describe(): string;
 }
 
 /** An etcd v3 key/value store. */
-export class Etcd implements Store {
+export class Etcd implements Watchable {
   constructor(
     endpoints: string[],
     key?: string | null,
@@ -87,11 +134,15 @@ export class Etcd implements Store {
     timeoutMs?: number | null,
   );
   fetch(): Promise<Outcome<Document>>;
+  watch(
+    onChange: (document: Document) => void,
+    onError?: (failure: Outcome<never>) => void,
+  ): Watching;
   describe(): string;
 }
 
 /** A NATS JetStream key/value bucket. */
-export class Nats implements Store {
+export class Nats implements Watchable {
   constructor(
     server: string,
     bucket: string,
@@ -101,6 +152,10 @@ export class Nats implements Store {
     timeoutMs?: number | null,
   );
   fetch(): Promise<Outcome<Document>>;
+  watch(
+    onChange: (document: Document) => void,
+    onError?: (failure: Outcome<never>) => void,
+  ): Watching;
   describe(): string;
 }
 
@@ -125,6 +180,9 @@ export class Firestore implements Store {
     path?: string | null,
     paths?: string[] | null,
     accessToken?: string | null,
+    /** A Google access token lives an hour; this is how to keep one fresh. */
+    accessTokenFn?: (() => string) | null,
+    tls?: Tls | null,
     timeoutMs?: number | null,
   );
   fetch(): Promise<Outcome<Document>>;

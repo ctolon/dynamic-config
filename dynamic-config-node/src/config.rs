@@ -468,6 +468,13 @@ impl Config {
             .with_builder(dynamic_config::Builder::allow_empty_env)
     }
 
+    /// Refuse an environment value this crate cannot type rather than
+    /// guessing at it — the strict reading of `APP_DB_PORT=eight`.
+    #[napi(js_name = "strictEnv")]
+    pub fn strict_env(&self) -> Value {
+        self.inner.with_builder(dynamic_config::Builder::strict_env)
+    }
+
     #[napi(js_name = "wholeDocument")]
     pub fn whole_document(&self) -> Value {
         self.inner
@@ -522,6 +529,21 @@ impl Config {
                 .layers
                 .defaults
                 .set(&path, value)
+                .map(|()| Value::Null),
+        )
+    }
+
+    /// A whole object as defaults at once, rather than a path at a time.
+    ///
+    /// What a hand-written `defaults()` becomes: every leaf of `values`
+    /// is a default, and a file that states any of them wins.
+    #[napi(js_name = "setDefaults")]
+    pub fn set_defaults(&self, values: Value) -> Value {
+        outcome::from_result(
+            self.inner
+                .layers
+                .defaults
+                .set_struct(&values)
                 .map(|()| Value::Null),
         )
     }
@@ -621,6 +643,35 @@ impl Config {
             .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .clone()
+    }
+
+    /// Installs `document` directly, without loading anything.
+    ///
+    /// The testing door, and the one a caller reaches for when the
+    /// configuration comes from somewhere this library does not know
+    /// about. It bumps the generation and fires the hooks, exactly as a
+    /// load does — what it skips is the sources and the validator, because
+    /// the caller is asserting they already did that.
+    #[napi]
+    pub fn replace(&self, document: Value) -> Value {
+        *self
+            .inner
+            .cache
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(document.clone());
+        self.inner.generation.fetch_add(1, Ordering::SeqCst);
+
+        for (_, hook) in self
+            .inner
+            .hooks
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .iter()
+        {
+            hook.call(document.clone(), ThreadsafeFunctionCallMode::NonBlocking);
+        }
+
+        outcome::ok(Value::Null)
     }
 
     /// How many times a document has been *installed*, validation

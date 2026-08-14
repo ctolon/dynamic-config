@@ -140,8 +140,18 @@ values = config.current()
 values["cache.ttl"]           # by dotted path
 values.get("cache.ttl", 60)   # ...with a default
 values["cache"]["ttl"]        # or a step at a time
+values.sub("cache")           # or hand a subsystem its own subtree
 dict(values)                  # a plain dict
 ```
+
+`sub` is what a subsystem gets instead of the whole configuration: below
+it the paths are **relative** — `values.sub("db").get("pool.max_size")` —
+so a function that takes a `Values` does not have to know where in the
+document it lives. `Snapshot::sub` is the Rust equivalent. A path that
+holds nothing, or holds a value rather than a table, answers an *empty*
+`Values` rather than raising: a subsystem handed a section its deployment
+did not configure should reach its own defaults, and `in` is how to tell
+the difference when it matters.
 
 It is a `Mapping`, so `len()`, `in`, `.keys()`, `.items()` and iteration
 work as they do on a dict, and every value is already a plain Python

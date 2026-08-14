@@ -26,6 +26,21 @@ breaking.
 
 ## [Unreleased]
 
+### Added
+
+- **`Values.sub(path)`**: the subtree at a path, as a `Values` of its own.
+  What a subsystem gets handed instead of the whole configuration —
+  relative paths below it, so a function that takes a `Values` does not
+  have to know where in the document it lives. `Snapshot::sub` is the Rust
+  equivalent, and this was the one shape that had no way to say it: a
+  caller indexed twice at every read, or built a dict and lost the
+  dotted-path lookup that is `Values`' whole point.
+
+  A path that holds nothing — or holds a value rather than a table —
+  answers an *empty* `Values` rather than raising. A subsystem handed a
+  section its deployment did not configure should reach its own defaults
+  rather than crash on the way to them, and `in` tells the two apart.
+
 ### Fixed
 
 - **An unknown key reads as a sentence in `check()`'s report.** It rendered

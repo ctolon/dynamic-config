@@ -311,6 +311,13 @@ up, and the [schemaless chapter](https://ctolon.github.io/dynamic-config/schemal
 | `values.leaf_paths()` | every dotted path that holds a value, sorted |
 | `repr(values)` | the keys, never a value |
 
+#### `Values.sub(path)`
+
+The subtree at `path`, as a `Values` of its own — relative paths below it,
+so a subsystem can be handed a section without being told where it sits.
+Empty when the path holds nothing, and empty when it holds a value rather
+than a table; `in` is how to tell those apart.
+
 ### `changed_paths(previous, current)`
 
 Which paths differ between two models (or mappings), as

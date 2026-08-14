@@ -150,6 +150,8 @@ export class DynamicConfig<T = unknown> {
   env(prefix: string): this;
   nest(separator: string): this;
   allowEmptyEnv(): this;
+  /** Refuse an environment value this crate cannot type, rather than guessing. */
+  strictEnv(): this;
   wholeDocument(): this;
   envFile(path: string): this;
   secretsDir(path: string): this;
@@ -158,6 +160,8 @@ export class DynamicConfig<T = unknown> {
 
   // The runtime layers.
   setDefault(path: string, value: unknown): this;
+  /** A whole object as defaults at once: every leaf of it is one. */
+  setDefaults(values: Record<string, unknown>): this;
   setOverride(path: string, value: unknown): this;
   clearDefaults(): this;
   clearOverrides(): this;
@@ -179,6 +183,16 @@ export class DynamicConfig<T = unknown> {
   tryCurrent(): T | undefined;
   /** One value by dotted path — the read a configuration with no schema wants. */
   get<V = unknown>(path: string, fallback?: V): V;
+  /**
+   * Installs `document` directly, without loading: the testing door, and
+   * the one for configuration this library did not fetch.
+   */
+  replace(document: T): this;
+  /**
+   * Every installed document, as an async iterator — the shape a service
+   * loop wants, and the one where an `await` costs only the caller.
+   */
+  changes(): AsyncGenerator<T, void, void>;
 
   // Watching, and hooks.
   watch(options?: WatchOptions): this;

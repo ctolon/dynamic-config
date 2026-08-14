@@ -20,3 +20,20 @@ base package, and a gap between them is a pair nobody built.
   answer is kept, and the handle it returns refreshes it.
 - Descriptions that never carry a credential, by the store crates' own
   redaction rather than by a second copy of it.
+- **Credentials that rotate.** `tokenFn` (and Firestore's
+  `accessTokenFn`) is a function called on the event loop before each
+  fetch, for the tokens that turn over: a projected service-account token,
+  a Vault lease, a Google access token that lives an hour. A store built
+  once holds what it was given, which is why the store is built per fetch
+  when one is supplied.
+- **TLS as files or as bytes** — `caCertificateFile`/`caCertificatePem`
+  and the client pair — because a Kubernetes secret is a mounted file and
+  a certificate fetched at startup never touches a disk. Saying nothing
+  means the platform's trust store, not *no TLS*.
+- **`watch(onChange, onError?)` on the four stores that push**: Consul's
+  blocking query, Redis' keyspace notifications, etcd's watch stream and
+  NATS' JetStream watch. The loop is a thread of its own and reaches the
+  event loop only to deliver; the handle's `stop()` is idempotent and
+  waits for the loop to notice. Vault, S3, Firestore and git have none,
+  and deliberately: their Rust watch loops poll, so `setInterval` around
+  `refresh()` is the same thing with one fewer thread.

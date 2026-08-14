@@ -91,28 +91,36 @@ schema export, units, the last-known-good cache, testing patterns — lives in
 |---|---|---|
 | [`dynamic-config`](https://crates.io/crates/dynamic-config) | the engine: loading, layers, storage, watching | **Beta** |
 | [`dynamic-config-macros`](https://crates.io/crates/dynamic-config-macros) | `#[dynamic_config]` | **Beta** |
-| [`dynamic-config-etcd`](dynamic-config-etcd) | etcd, push watch over gRPC | Experimental |
-| [`dynamic-config-consul`](dynamic-config-consul) | Consul KV, blocking queries | Experimental |
-| [`dynamic-config-nats`](dynamic-config-nats) | NATS JetStream KV, push watch | Experimental |
-| [`dynamic-config-redis`](dynamic-config-redis) | Redis, keyspace notifications | Experimental |
-| [`dynamic-config-vault`](dynamic-config-vault) | Vault KV v2, version polling | Experimental |
-| [`dynamic-config-s3`](dynamic-config-s3) | S3 & compatibles, ETag polling — needs tokio | Experimental |
-| [`dynamic-config-firestore`](dynamic-config-firestore) | Firestore REST, `updateTime` polling | Experimental |
-| [`dynamic-config-git`](dynamic-config-git) | a git repository, shallow single-ref fetch — GitHub, GitLab, Azure DevOps | Experimental |
-| [`dynamic-config-embedded`](dynamic-config-embedded) | the same shape for `no_std` targets | Experimental |
-| [`dynamic-config-server`](dynamic-config-server) | serves configuration over HTTP, per-caller authorisation | Experimental |
-| [`dynamic-config-cli`](dynamic-config-cli) | `explain` and `diff` on the command line — `cargo install dynamic-config-cli` | Experimental |
-| [`dynamic-config-python`](dynamic-config-python) | Python bindings — `pip install dynamic-config-py`; a dataclass, Pydantic or msgspec validates | Experimental |
-| [`dynamic-config-python-remote`](dynamic-config-python-remote) | the stores for Python — `pip install "dynamic-config-py[remote]"` | Experimental |
-| [`dynamic-config-node`](dynamic-config-node) | Node.js bindings — `npm install dynamic-config-node`; Zod, Ajv or a function of your own validates | Experimental |
-| [`dynamic-config-node-remote`](dynamic-config-node-remote) | the stores for Node — `npm install dynamic-config-node-remote` | Experimental |
+| [`dynamic-config-etcd`](dynamic-config-etcd) | etcd, push watch over gRPC | **Beta** |
+| [`dynamic-config-consul`](dynamic-config-consul) | Consul KV, blocking queries | **Beta** |
+| [`dynamic-config-nats`](dynamic-config-nats) | NATS JetStream KV, push watch | **Beta** |
+| [`dynamic-config-redis`](dynamic-config-redis) | Redis, keyspace notifications | **Beta** |
+| [`dynamic-config-vault`](dynamic-config-vault) | Vault KV v2, version polling | **Beta** |
+| [`dynamic-config-s3`](dynamic-config-s3) | S3 & compatibles, ETag polling — needs tokio | **Beta** |
+| [`dynamic-config-firestore`](dynamic-config-firestore) | Firestore REST, `updateTime` polling | **Beta** |
+| [`dynamic-config-git`](dynamic-config-git) | a git repository, shallow single-ref fetch — GitHub, GitLab, Azure DevOps | **Beta** |
+| [`dynamic-config-embedded`](dynamic-config-embedded) | the same shape for `no_std` targets | **Beta** |
+| [`dynamic-config-server`](dynamic-config-server) | serves configuration over HTTP, per-caller authorisation | **Beta** |
+| [`dynamic-config-cli`](dynamic-config-cli) | `explain` and `diff` on the command line — `cargo install dynamic-config-cli` | **Beta** |
+| [`dynamic-config-python`](dynamic-config-python) | Python bindings — `pip install dynamic-config-py`; a dataclass, Pydantic or msgspec validates | **Beta** |
+| [`dynamic-config-python-remote`](dynamic-config-python-remote) | the stores for Python — `pip install "dynamic-config-py[remote]"` | **Beta** |
+| [`dynamic-config-node`](dynamic-config-node) | Node.js bindings — `npm install dynamic-config-node`; Zod, Ajv or a function of your own validates | **Beta** |
+| [`dynamic-config-node-remote`](dynamic-config-node-remote) | the stores for Node — `npm install dynamic-config-node-remote` | **Beta** |
 
 `dynamic-config-store-core` is also published, and is not in the table: it
 is machinery the store crates share rather than something to depend on.
 
-**Beta**: breaking changes bump the minor pre-1.0 and are announced in the
-changelog. **Experimental**: may change shape without ceremony — pin an
-exact version. Details in
+**Every crate is Beta**: breaking changes bump the minor pre-1.0 and are
+announced in the changelog; a patch never breaks. The store crates were
+Experimental until 0.6.1, and what promoted them is evidence — each is
+tested against a real server in a container, each watch loop's failure
+branches are enumerated in its own documentation, and three of them are
+unplugged mid-watch by `just chaos`.
+
+**Between here and 1.0, only security fixes and hotfixes land.** The
+surface is what it is going to be for 0.x: no new sources, no new stores,
+no new methods on the settled types. Pin the minor version and take
+patches automatically. Details in
 [Stability Tiers](https://ctolon.github.io/dynamic-config/stability-tiers.html).
 
 Every store follows the same contract — the current value is not announced

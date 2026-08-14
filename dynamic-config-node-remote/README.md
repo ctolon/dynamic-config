@@ -62,19 +62,70 @@ synchronous answer, so the last one is kept.
 in it, a git URL with a token: both are redacted by the store crates' own
 rule, so an error message and a log line are safe to keep.
 
-## What is not here yet
+## Credentials that rotate
 
-- **Callable credentials that rotate.** The Python wheel takes a function
-  that mints a fresh token; here a token is a string. A deployment whose
-  credential rotates should rebuild the store — which is one line, and
-  what `useStore`'s handle makes easy.
-- **TLS material from bytes.** The store crates take paths and PEM; this
-  package exposes neither yet, so a private authority is the platform
-  trust store's business for now.
-- **Watch loops.** A store's watch is a long-lived thread pushing into a
-  sink. `installed.refresh()` on a timer is the shape here, and it is the
-  same one `refresh_remote()` is in Rust.
+A token as a **string** is right for something an operator pasted into a
+deployment. It is wrong for every credential that turns over — a projected
+service-account token the kubelet rewrites, a Vault token with a lease, a
+Google access token that lives an hour — because a store built once holds
+what it was given until the process ends.
 
-Each of those is a decision to make deliberately rather than a gap to fill
-quietly; [the book](https://ctolon.github.io/dynamic-config/node/remote-stores.html)
-says the same thing where a reader will meet it.
+So a credential may be a **function**, called on the event loop before
+each fetch:
+
+```ts
+new Vault("https://vault:8200", "secret", "myapp/db", null, null, null,
+  () => readFileSync("/var/run/secrets/vault-token", "utf8"))
+```
+
+The loop is where your `readFileSync`, your cloud SDK and your own cache
+live, so a value read there is the current one by construction.
+
+## TLS
+
+Files *and* bytes, because both are real — a Kubernetes secret is a
+mounted file, and a certificate fetched at startup is bytes that never
+touch a disk:
+
+```ts
+new Consul(address, key, null, null, null, null, null, {
+  caCertificateFile: "/etc/ssl/private-ca.pem",
+  clientCertificateFile: "/etc/ssl/app.crt",
+  clientKeyFile: "/etc/ssl/app.key",
+})
+```
+
+Saying nothing means the platform's trust store, not *no TLS*.
+
+## Watching
+
+Four of the stores **push**, and those can be watched:
+
+```ts
+const handle = store.watch(
+  (document) => console.log("the store moved", document),
+  (failure) => console.error("the watch ended", failure.error),
+)
+
+handle.stop()   // idempotent, and it waits for the loop to notice
+```
+
+| Store | How it notices |
+|---|---|
+| `Consul` | a blocking query — the agent holds the request open |
+| `Redis` | keyspace notifications |
+| `Etcd` | a watch stream, re-read at the event's own revision |
+| `Nats` | a JetStream watch |
+
+The loop runs on a thread of its own and reaches the event loop only to
+deliver, so a program that watches is not structured around watching.
+
+**The other four have no `watch`, and that is not a gap.** Vault, S3,
+Firestore and git are *polled* by their Rust watch loops too — a version
+counter, an ETag, an update time, a commit — so
+`setInterval(() => installed.refresh(), 30_000)` is the same thing with
+one fewer thread, and it is a line you can read.
+
+A store watch hands you a **document**; `useStore` is what puts one into a
+configuration. Keeping those apart is what lets a caller log a change, or
+refuse it, without the engine having already acted on it.

@@ -46,6 +46,10 @@ config.get("pool.maxSize", 8)          // …or one value, by dotted path
 
 config.onReload((document) => …)       // every install
 config.onChange("pool.maxSize", …)     // one path, when it moves
+for await (const doc of config.changes()) …   // …or as an async iterator
+
+config.setDefaults({ pool: { maxSize: 8 } })  // a whole object as defaults
+config.replace(document)                      // install one directly, no sources
 
 config.sourceOf("port")                // which layer wins, and from where
 config.isSet("port")
@@ -166,8 +170,16 @@ are typechecked there.
 One prebuilt binary per platform, installed as an optional dependency — so
 `npm install` downloads one, not five, and compiles nothing.
 
-**Node 18, 20, 22 and 24** are tested in CI. Node-API is ABI-stable, so
-the same binary serves versions released after this one; the matrix exists
-because the JavaScript half is ordinary code that a version can break.
+| Node | Status |
+|---|---|
+| 18 (the floor), 20, 22, 24 | tested in CI, every commit |
+| 26 and later | expected to work — Node-API is ABI-stable; a row is added when it ships |
+| 16 and older | not supported; `engines.node` refuses |
+
+The matrix exists even though the ABI is stable, because that is a claim
+about the *addon*: the JavaScript half is ordinary code that a version can
+break. musl (Alpine) is not among the platforms — the addon links glibc.
+Raising the floor is treated as a breaking change. The full table is in
+[Stability & Production Use](https://ctolon.github.io/dynamic-config/node/stability.html).
 
 [`dynamic-config`]: https://crates.io/crates/dynamic-config
