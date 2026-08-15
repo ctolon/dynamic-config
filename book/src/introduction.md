@@ -1,5 +1,13 @@
 # dynamic-config
 
+> **This book has moved to
+> <https://dynamic-config-rs.github.io/>.**
+>
+> The engine is now
+> [dynamic-config-rs/dynamic-config](https://github.com/dynamic-config-rs/dynamic-config),
+> and this copy stops at 0.6.1. Nothing on crates.io changed — same crate,
+> same name, same versions — but everything written after 0.6.1 is over
+> there.
 Hot-reloadable, lock-free application configuration for Rust: one attribute
 declares the type, one builder states its sources. Built on [figment].
 

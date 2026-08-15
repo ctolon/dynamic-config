@@ -1,3 +1,26 @@
+> [!IMPORTANT]
+> **This repository has moved.** The family lives in the
+> [`dynamic-config-rs`](https://github.com/dynamic-config-rs) organisation
+> now, split into four repositories that release on their own schedules:
+>
+> | What | Where |
+> |---|---|
+> | the engine, the macro, the CLI, the `no_std` cell | [dynamic-config-rs/dynamic-config](https://github.com/dynamic-config-rs/dynamic-config) |
+> | the eight stores and the config server | [dynamic-config-rs/dynamic-config-remote](https://github.com/dynamic-config-rs/dynamic-config-remote) |
+> | the two PyPI wheels | [dynamic-config-rs/dynamic-config-python](https://github.com/dynamic-config-rs/dynamic-config-python) |
+> | the two npm packages | [dynamic-config-rs/dynamic-config-node](https://github.com/dynamic-config-rs/dynamic-config-node) |
+>
+> **The books are at <https://dynamic-config-rs.github.io/>.**
+>
+> Nothing you installed changed: the crate names, the wheel names and the
+> package names are the same, and 0.6.1 — the last release cut from here —
+> is on crates.io, PyPI and npm exactly as it was. Issues, pull requests
+> and releases now happen in the repository that owns the code; this one is
+> archived and read-only.
+>
+> This site stays up, and so does its history: every release up to 0.6.1
+> was made here, and the links in those changelogs still point at it.
+
 <div align="center">
 
 # dynamic-config

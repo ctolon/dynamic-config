@@ -1,3 +1,17 @@
+> [!IMPORTANT]
+> **Report to the repository that owns the code**, not here: this one is
+> archived. The engine is
+> [dynamic-config-rs/dynamic-config](https://github.com/dynamic-config-rs/dynamic-config/security/advisories/new),
+> the stores and the server are
+> [dynamic-config-rs/dynamic-config-remote](https://github.com/dynamic-config-rs/dynamic-config-remote/security/advisories/new),
+> the wheels are
+> [dynamic-config-rs/dynamic-config-python](https://github.com/dynamic-config-rs/dynamic-config-python/security/advisories/new),
+> and the npm packages are
+> [dynamic-config-rs/dynamic-config-node](https://github.com/dynamic-config-rs/dynamic-config-node/security/advisories/new).
+>
+> What is written below still describes what these crates promise; only the
+> address changed.
+
 # Security
 
 ## Reporting a vulnerability
