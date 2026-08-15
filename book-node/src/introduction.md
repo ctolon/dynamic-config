@@ -1,5 +1,12 @@
 # Node.js Bindings
 
+> **This book has moved to
+> <https://dynamic-config-rs.github.io/node/>.**
+>
+> The packages are now
+> [dynamic-config-rs/dynamic-config-node](https://github.com/dynamic-config-rs/dynamic-config-node),
+> and this copy stops at 0.0.1. `npm install dynamic-config-node` is
+> unchanged.
 `dynamic-config-node` on npm pairs this engine with the schema you already
 write: **Rust resolves, your schema validates, JavaScript reads a cached
 object.**

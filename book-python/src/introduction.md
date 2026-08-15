@@ -1,5 +1,12 @@
 # Python Bindings
 
+> **This book has moved to
+> <https://dynamic-config-rs.github.io/python/>.**
+>
+> The wheels are now
+> [dynamic-config-rs/dynamic-config-python](https://github.com/dynamic-config-rs/dynamic-config-python),
+> and this copy stops at 0.1.2. `pip install dynamic-config-py` is
+> unchanged.
 `dynamic-config-py` pairs this engine with the schema you already write:
 **Rust resolves, your schema validates, Python reads a cache.**
 
